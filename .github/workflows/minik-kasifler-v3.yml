@@ -1,9 +1,9 @@
-name: Minik Kasifler V3 - Turkce Sesli
+name: Minik Kasifler V3 - DUZELTILMIS
 on:
   workflow_dispatch:
     inputs:
       kategori:
-        description: Uretilecek bolum
+        description: Bolum secimi
         type: choice
         required: true
         default: karisik
@@ -15,7 +15,7 @@ on:
           - 04-sekil-robotu
           - 05-paylasma-gunu
       adet:
-        description: Karisik secimde video adedi (1-5)
+        description: Karisik durumda 1-5 arasi video sayisi
         type: number
         required: true
         default: 2
@@ -29,68 +29,42 @@ jobs:
       KATEGORI: ${{ inputs.kategori }}
       ADET: ${{ inputs.adet }}
     steps:
-      - name: Projeyi getir
+      - name: Depoyu al
         uses: actions/checkout@v4
-      - name: Node 24
+      - name: Node.js 24 kur
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
-      - name: Turkce konusma motorunu kur
+          node-version: '24'
+      - name: Turkce ses motorunu kur
         run: |
           sudo apt-get update
           sudo apt-get install -y espeak-ng
-      - name: Video motorunu ve sahneleri hazirla
+      - name: V3 proje dosyalarini guvenli ac
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .
-          cat > package.json <<'V3_PACKAGE_JSON_EOF'
-          {
-            "name":"minik-kasifler-v3",
-            "version":"3.0.0",
-            "private":true,
-            "type":"module",
-            "scripts":{"render":"node render.mjs","studio":"remotion studio src/index.jsx"},
-            "dependencies":{"@remotion/cli":"4.0.415","remotion":"4.0.415","react":"18.3.1","react-dom":"18.3.1"}
-          }
-          V3_PACKAGE_JSON_EOF
-          mkdir -p src
-          cat > src/index.jsx <<'V3_SRC_INDEX_JSX_EOF'
-          import React from 'react';
-          import {registerRoot, Composition} from 'remotion';
-          import {Episode} from './video.jsx';
-          import {episodes} from './episodes.mjs';
-          const FPS=30;
-          const Root=()=> <Composition id="MinikKasifler" component={Episode} fps={FPS} width={720} height={1280} durationInFrames={48*FPS} defaultProps={{episode:episodes[0],audioEnabled:true}}/>;
-          registerRoot(Root);
-          V3_SRC_INDEX_JSX_EOF
-          mkdir -p src
-          cat > src/video.jsx <<'V3_SRC_VIDEO_JSX_EOF'
-          import React from 'react';
-          import {AbsoluteFill,Audio,Sequence,staticFile,useCurrentFrame,interpolate,spring,useVideoConfig} from 'remotion';
-          
-          const FPS=30;
-          const lengths=[4,9,9,9,9,8];
-          const FONT='Arial, "DejaVu Sans", sans-serif';
-          const Txt=({children,size=52,color='#24435C',weight=900,style={}})=><div style={{fontFamily:FONT,fontSize:size,lineHeight:1.18,fontWeight:weight,color,textAlign:'center',overflowWrap:'break-word',...style}}>{children}</div>;
-          function Bunny({size=210,blink=false}){return <svg width={size} height={size*1.15} viewBox="0 0 240 275" aria-label="Mavi tavşan"><path d="M54 130 Q26 32 62 22 Q91 11 103 117M137 117Q148 12 184 19Q219 39 179 132" fill="#86C9F5" stroke="#3E83B6" strokeWidth="9"/><path d="M65 104Q47 41 66 44Q83 49 84 105M155 107Q167 47 188 47Q192 67 170 110" fill="#FFD1D8"/><ellipse cx="121" cy="184" rx="95" ry="85" fill="#86C9F5" stroke="#3E83B6" strokeWidth="8"/><ellipse cx="82" cy="175" rx="10" ry={blink?2:14} fill="#274F72"/><ellipse cx="161" cy="175" rx="10" ry={blink?2:14} fill="#274F72"/><path d="M109 203L133 203L121 215Z" fill="#F48A9D"/><path d="M121 215Q109 233 96 220M121 215Q133 233 147 220" fill="none" stroke="#274F72" strokeWidth="5" strokeLinecap="round"/><circle cx="65" cy="211" r="13" fill="#FFC5D6"/><circle cx="179" cy="211" r="13" fill="#FFC5D6"/></svg>}
-          function Chick({size=160}){return <svg width={size} height={size} viewBox="0 0 220 220" aria-label="Sarı civciv"><ellipse cx="110" cy="119" rx="92" ry="88" fill="#FFE476" stroke="#D9A53F" strokeWidth="8"/><path d="M88 36L104 10L119 39L137 16" fill="none" stroke="#D9A53F" strokeWidth="9" strokeLinecap="round"/><circle cx="80" cy="111" r="10" fill="#594837"/><circle cx="140" cy="111" r="10" fill="#594837"/><path d="M88 142L110 161L132 142Z" fill="#F69B4F"/><ellipse cx="56" cy="146" rx="14" ry="9" fill="#FFABAE"/><ellipse cx="165" cy="146" rx="14" ry="9" fill="#FFABAE"/></svg>}
-          function Cat(){return <svg width="260" height="250" viewBox="0 0 260 250"><path d="M42 115L45 30L96 72Q132 57 165 72L213 30L220 115Q240 178 197 216Q132 257 65 216Q20 183 42 115Z" fill="#F9B777" stroke="#B27844" strokeWidth="8" strokeLinejoin="round"/><ellipse cx="90" cy="141" rx="10" ry="14" fill="#4E3A2B"/><ellipse cx="169" cy="141" rx="10" ry="14" fill="#4E3A2B"/><path d="M115 168L145 168L130 182Z" fill="#D87987"/><path d="M130 182Q115 199 102 188M130 182Q144 199 159 188M70 180H25M190 180H235" fill="none" stroke="#6E4C35" strokeWidth="5" strokeLinecap="round"/></svg>}
-          function Fish(){return <svg width="280" height="240" viewBox="0 0 280 240"><path d="M70 115L15 65V170L70 128" fill="#6CC7FD" stroke="#267DB1" strokeWidth="7"/><ellipse cx="165" cy="120" rx="100" ry="70" fill="#6CC7FD" stroke="#267DB1" strokeWidth="7"/><circle cx="220" cy="103" r="11" fill="#254C65"/><path d="M230 142Q208 157 196 144" fill="none" stroke="#254C65" strokeWidth="6"/></svg>}
-          function Duck(){return <svg width="260" height="245" viewBox="0 0 260 245"><ellipse cx="123" cy="156" rx="90" ry="66" fill="#FFE37D" stroke="#D4AE4C" strokeWidth="7"/><circle cx="161" cy="91" r="61" fill="#FFE37D" stroke="#D4AE4C" strokeWidth="7"/><circle cx="179" cy="79" r="9" fill="#51462F"/><path d="M203 110L250 126L205 141Z" fill="#F3A14A"/><path d="M106 207V231M152 210V231" stroke="#E59A41" strokeWidth="8"/></svg>}
-          function Dog(){return <svg width="260" height="255" viewBox="0 0 260 255"><path d="M61 91Q5 28 16 165Q45 179 75 136M196 92Q250 25 251 154Q221 181 185 133" fill="#A8744C" stroke="#6C4A39" strokeWidth="8"/><ellipse cx="131" cy="141" rx="87" ry="91" fill="#DBAC78" stroke="#6C4A39" strokeWidth="8"/><circle cx="96" cy="128" r="11" fill="#3D342E"/><circle cx="166" cy="128" r="11" fill="#3D342E"/><ellipse cx="132" cy="168" rx="21" ry="14" fill="#3D342E"/><path d="M132 180Q120 208 102 188M132 180Q145 208 162 188" fill="none" stroke="#3D342E" strokeWidth="6"/></svg>}
-          function Shape({shape='circle',color='#E97D68',size=300}){return <svg width={size} height={size} viewBox="0 0 300 300">{shape==='circle'?<circle cx="150" cy="150" r="115" fill={color} stroke="white" strokeWidth="14"/>:shape==='square'?<rect x="35" y="35" width="230" height="230" rx="18" fill={color} stroke="white" strokeWidth="14"/>:<path d="M150 26L280 265H20Z" fill={color} stroke="white" strokeWidth="14" strokeLinejoin="round"/>}</svg>}
-          function Symbol({scene,reveal}){
-           if(scene.kind==='color')return <div style={{display:'flex',gap:18,alignItems:'center'}}>{[scene.color,'#318BF2','#FFD43B'].filter((v,i,a)=>a.indexOf(v)===i).slice(0,3).map((c,i)=><div key={i} style={{width:scene.color===c&&reveal?185:152,height:scene.color===c&&reveal?210:180,background:c,border:'10px solid white',borderRadius:'52% 52% 48% 48%',boxShadow:'0 12px 22px #25415C33',position:'relative'}}><div style={{position:'absolute',bottom:-55,left:'50%',width:4,height:54,background:'#8291A0'}}/></div>)}</div>;
-           if(scene.kind==='count')return <div style={{display:'flex',gap:18,flexWrap:'wrap',justifyContent:'center',maxWidth:510}}>{Array.from({length:scene.count},(_,i)=><div key={i} style={{fontSize:96,color:['#F5BC27','#E86B8B','#65B9E6','#83C98C'][i%4],textShadow:'0 5px white'}}>★</div>)}</div>;
-           if(scene.kind==='animal')return scene.animal==='cat'?<Cat/>:scene.animal==='duck'?<Duck/>:scene.animal==='fish'?<Fish/>:<Dog/>;
-           if(scene.kind==='shape')return <Shape shape={scene.shape} color={scene.shape==='circle'?'#F3A44D':scene.shape==='square'?'#73C5D8':'#A18AE8'}/>;
-           if(scene.kind==='robot')return <div style={{display:'flex',flexDirection:'column',alignItems:'center'}}><div style={{width:155,height:155,background:'#80CBE3',border:'8px solid white',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'space-evenly'}}><span style={{fontSize:45}}>•</span><span style={{fontSize:45}}>•</span></div><div style={{width:220,height:180,background:'#A48CED',border:'9px solid white',borderRadius:16,display:'grid',placeItems:'center',fontSize:64}}>★</div></div>;
-           if(scene.kind==='feel')return <div style={{display:'flex',gap:15,alignItems:'center'}}><Bunny size={205}/><Chick size={170}/></div>;
-           return <div style={{display:'flex',alignItems:'center',gap:8}}><Bunny size={195}/><Chick size={150}/></div>;
-          }
-          function SceneView({scene,episode,index,duration}){
-           const f=useCurrentFrame(); const {fps}=useVideoConfig(); const reveal=f>=Math.round(duration*.64); const appear=spring({frame:f,fps,config:{damping:15,stiffness:115}});
-           const float=Math.sin(f/15)*11;
-           const intro=scene.kind==='intro'; const outro=scene.kind==='outro';
-           return <AbsoluteFill style={{background:'#FFFAF2',overflow:'hidden',fontFamily:FONT}}>
+          printf '%s' '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' | base64 --decode | tar -xz
+          test -s src/video.jsx
+          test -s src/episodes.mjs
+          test -s render.mjs
+          echo 'V3 proje dosyalari acildi.'
+      - name: Node paketlerini kur
+        run: npm install --no-audit --no-fund
+      - name: Seslendirme ve MP4 uret
+        run: node render.mjs
+      - name: MP4 dosyalarini kesin dogrula
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d outputs
+          find outputs -maxdepth 1 -name '*.mp4' -size +15k -print
+          count=$(find outputs -maxdepth 1 -name '*.mp4' -size +15k | wc -l)
+          test "$count" -ge 1 || { echo 'HATA: MP4 olusmadi'; exit 1; }
+          echo "MP4 sayisi: $count"
+      - name: MP4leri indirilebilir yap
+        uses: actions/upload-artifact@v6
+        with:
+          name: minik-kasifler-v3-MP4
+          path: outputs/*.mp4
+          if-no-files-found: error
+          retention-days: 7
