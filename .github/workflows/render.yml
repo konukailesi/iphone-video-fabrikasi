@@ -1,0 +1,171 @@
+name: iPhone Remotion Video Fabrikasi
+
+on:
+  workflow_dispatch:
+    inputs:
+      kategori:
+        description: Video kategorisi
+        type: choice
+        required: true
+        default: karisik
+        options:
+          - karisik
+          - bilgi
+          - hikaye
+          - motivasyon
+      adet:
+        description: Uretilecek video sayisi (1-30)
+        type: number
+        required: true
+        default: 3
+      ozel_icerik:
+        description: 'Istege bagli: Baslik::Metin;Baslik::Metin'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      CATEGORY: ${{ inputs.kategori }}
+      COUNT: ${{ inputs.adet }}
+      IDEAS: ${{ inputs.ozel_icerik }}
+    steps:
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Proje dosyalarini olustur
+        run: |
+          cat > package.json <<'EOF'
+          {"name":"iphone-video-fabrikasi","private":true,"type":"module","dependencies":{"remotion":"4.0.415","@remotion/cli":"4.0.415","react":"18.3.1","react-dom":"18.3.1"}}
+          EOF
+          cat > src.jsx <<'EOF'
+          import React from 'react';
+          import {Composition, registerRoot, useCurrentFrame, interpolate, Easing, AbsoluteFill} from 'remotion';
+
+          const palettes = {
+            bilgi: {start:'#071c32',end:'#103c5b',accent:'#55e3e0',label:'BİLGİ'},
+            hikaye: {start:'#20102d',end:'#472152',accent:'#ffc885',label:'KISA HİKÂYE'},
+            motivasyon: {start:'#0b2823',end:'#205846',accent:'#c0fc8f',label:'MOTİVASYON'},
+          };
+
+          const safe=(s)=>String(s||'').slice(0,700);
+          const Short=({title='Bugünün konusu',body='Yeni bir bakış açısı',category='bilgi',number=1})=>{
+            const f=useCurrentFrame();
+            const p=palettes[category]||palettes.bilgi;
+            const enter=interpolate(f,[0,24],[0,1],{extrapolateRight:'clamp',easing:Easing.out(Easing.cubic)});
+            const bodyEnter=interpolate(f,[62,89],[0,1],{extrapolateLeft:'clamp',extrapolateRight:'clamp'});
+            const closing=interpolate(f,[345,388],[0,1],{extrapolateLeft:'clamp',extrapolateRight:'clamp'});
+            const glowX=interpolate(f,[0,450],[-60,110]);
+            return <AbsoluteFill style={{background:`linear-gradient(155deg,${p.start},${p.end})`,fontFamily:'Arial, sans-serif',color:'white',overflow:'hidden'}}>
+              <div style={{position:'absolute',height:800,width:800,top:-260,left:glowX-290,borderRadius:500,background:p.accent,filter:'blur(125px)',opacity:0.16}}/>
+              <div style={{position:'absolute',height:520,width:520,bottom:-240,right:-200,borderRadius:300,border:`65px solid ${p.accent}`,opacity:0.13}}/>
+              <div style={{position:'absolute',top:110,left:74,right:74,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div style={{fontSize:29,fontWeight:800,color:p.accent,letterSpacing:5}}>{p.label}</div>
+                <div style={{fontSize:23,opacity:0.7}}>#{String(number).padStart(2,'0')}</div>
+              </div>
+              <div style={{position:'absolute',top:235,left:74,right:74,transform:`translateY(${(1-enter)*45}px)`,opacity:enter}}>
+                <div style={{height:9,width:115,background:p.accent,borderRadius:12,marginBottom:47}}/>
+                <div style={{fontSize:65,fontWeight:850,lineHeight:1.13,letterSpacing:-1.7,overflowWrap:'anywhere'}}>{safe(title)}</div>
+              </div>
+              <div style={{position:'absolute',top:660,left:74,right:74,opacity:bodyEnter,transform:`translateY(${(1-bodyEnter)*25}px)`}}>
+                <div style={{fontSize:38,lineHeight:1.48,fontWeight:450,overflowWrap:'anywhere',whiteSpace:'pre-wrap'}}>{safe(body)}</div>
+              </div>
+              <div style={{position:'absolute',bottom:105,left:74,right:74,display:'flex',justifyContent:'space-between',alignItems:'center',borderTop:'2px solid #ffffff33',paddingTop:28}}>
+                <div style={{fontSize:27,letterSpacing:1}}>KISA • NET • ETKİLİ</div>
+                <div style={{color:p.accent,fontSize:27,fontWeight:800,opacity:closing}}>TAKİP ET +</div>
+              </div>
+            </AbsoluteFill>;
+          };
+          const Root=()=> <Composition id="Short" component={Short} durationInFrames={450} fps={30} width={720} height={1280} defaultProps={{title:'Küçük bir başlangıç',body:'Bugün ilk adımını at.',category:'motivasyon',number:1}}/>;
+          registerRoot(Root);
+          EOF
+          cat > render.mjs <<'EOF'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import {spawnSync} from 'node:child_process';
+          const count=Math.min(30,Math.max(1,Number(process.env.COUNT||3)));
+          const category=process.env.CATEGORY||'karisik';
+          const ideas=String(process.env.IDEAS||'').split(';').map(x=>x.trim()).filter(Boolean);
+          const library={
+            bilgi:[
+              ['Ahtapotların üç kalbi vardır','İki kalp solungaçlara kan pompalar. Üçüncü kalp ise kanı vücudun geri kalanına gönderir.'],
+              ['Venüs’te bir gün, bir yıldan uzundur','Venüs kendi ekseninde yaklaşık 243 Dünya gününde, Güneş çevresinde ise yaklaşık 225 Dünya gününde döner.'],
+              ['Balın ömrü neden uzundur?','Düşük su içeriği ve asidik yapısı, uygun koşullarda birçok mikroorganizmanın gelişmesini zorlaştırır.'],
+              ['Uzayda ses neden yayılmaz?','Sesin iletilmesi için madde gerekir. Uzayın büyük ölçüde boş olan bölgelerinde ses dalgaları ilerleyemez.'],
+              ['Işık, Güneş’ten ne kadar sürede gelir?','Güneş ışığının Dünya’ya ulaşması yaklaşık 8 dakika 20 saniye sürer.'],
+              ['Penguenler uçabilir mi?','Havada uçamazlar. Ancak güçlü yüzgeç benzeri kanatlarıyla su altında son derece çevik hareket ederler.'],
+              ['Bambu ne kadar hızlı büyür?','Bazı bambu türleri uygun koşullarda bir günde onlarca santimetre büyüyebilir.'],
+              ['Ay neden hep aynı yüzünü gösterir?','Ay’ın kendi çevresindeki dönüş süresi ile Dünya çevresindeki dolanım süresi neredeyse aynıdır.'],
+              ['Kar taneleri neden altı kolludur?','Su moleküllerinin buz kristallerindeki dizilimi altıgen yapıyı destekler.'],
+              ['Gökkuşağı nasıl oluşur?','Güneş ışığı su damlacıklarında kırılır, yansır ve renklere ayrılır.']
+            ],
+            hikaye:[
+              ['Son treni bekleyen adam','Peronda herkes gitmişti. Adam son treni kaçırdığını sandı. Oysa o gece asıl kaçırmaması gereken şey, kendine verdiği sözdü.'],
+              ['Bir fincan kahve','Yaşlı kadın her sabah iki kahve söylerdi. Garson nedenini sorduğunda gülümsedi: İkincisi, her zaman umut için.'],
+              ['Kapının altındaki not','Notta sadece şu yazıyordu: Bugün kendine nazik davran. Kim bıraktı bilmiyordu ama tam da buna ihtiyacı vardı.'],
+              ['Kaybolan anahtar','Bütün gün anahtarını aradı. Sonunda cebinde buldu. Bazen çözüm, başından beri yanı başımızdadır.'],
+              ['Küçük fidan','Çocuk her gün fidanı suladı. Aylarca değişen bir şey yok gibiydi. Sonra ilk yeşil yaprak çıktı: Sabır görünmez çalışır.'],
+              ['Boş defter','Önüne tertemiz bir defter koydu. İlk sayfaya tek cümle yazdı: Hikâyem henüz bitmedi.'],
+              ['Işığı açık ev','Sokaktaki tek ışıklı ev, gecenin en sessiz yeriydi. İçinde biri yeni bir başlangıç için cesaret topluyordu.'],
+              ['Kırık saat','Saat yıllardır çalışmıyordu. Ama dedesi onu sakladı: Zamanı değil, birlikte geçirdiğimiz günleri hatırlatıyor, dedi.'],
+              ['Kıyıdaki taş','Denize attığı taş halkalar oluşturdu. Küçük bir hareketin uzağa ulaşabileceğini ilk kez o gün fark etti.'],
+              ['Son sayfa','Kitabın son sayfası boştu. Yazar sadece şunu yazmıştı: Bundan sonrası senin hikâyen.']
+            ],
+            motivasyon:[
+              ['Küçük başla','Mükemmel zamanı bekleme. Bugün atacağın küçücük bir adım, yarının büyük değişiminin başlangıcı olabilir.'],
+              ['Devam etmek de başarıdır','Bazen ilerleme, sadece vazgeçmemektir. Yavaş olabilirsin; önemli olan yeniden denemek.'],
+              ['Dününle yarış','Başkasının hızına göre değil, kendi gelişimine göre ilerle. Bir adım bile fark yaratır.'],
+              ['Bir sayfa daha','Büyük hedefler küçük tekrarlarla büyür. Bugün yalnızca bir sayfa oku, bir adım at, bir işi bitir.'],
+              ['Kendine söz ver','Herkesin onayını alamayabilirsin. Ama kendi sözünü tutmak, özgüvenini güçlendirir.'],
+              ['Hata bir durak olabilir','Yanlış yapmak, öğrenmenin bir parçasıdır. Hatanı gör, dersini al ve yoluna devam et.'],
+              ['Şimdi başla','Kendini hazır hissetmeyi beklemek zorunda değilsin. Hazırlık çoğu zaman başladığında gelir.'],
+              ['Kendi ritmini bul','Hızlı ilerlemek zorunda değilsin. Sürdürebildiğin tempo, bir günlük coşkudan değerlidir.'],
+              ['Bugün tek hedef','Dağ gibi görünen işleri küçük parçalara böl. Bugün sadece ilk parçayı tamamla.'],
+              ['Yeni gün, yeni şans','Dünkü planın tutmamış olabilir. Bugün yeniden deneyebileceğin yepyeni bir gün.']
+            ]
+          };
+          const cats=category==='karisik'?['bilgi','hikaye','motivasyon']:[category];
+          const out='outputs';fs.mkdirSync(out,{recursive:true});
+          const cli=path.resolve('node_modules/.bin/remotion');
+          for(let i=0;i<count;i++){
+            const cat=cats[i%cats.length];
+            const pool=library[cat];
+            const [defaultTitle,defaultBody]=pool[Math.floor(i/cats.length)%pool.length];
+            let title=defaultTitle,body=defaultBody;
+            if(ideas[i]){
+              const parts=ideas[i].split('::');
+              title=parts[0].trim()||defaultTitle;
+              body=(parts.slice(1).join('::').trim())||defaultBody;
+            }
+            const props={title:title.slice(0,95),body:body.slice(0,380),category:cat,number:i+1};
+            const propsFile=path.join(out,`input_${String(i+1).padStart(2,'0')}.json`);
+            fs.writeFileSync(propsFile,JSON.stringify(props),'utf8');
+            const target=path.join(out,`short_${String(i+1).padStart(2,'0')}_${cat}.mp4`);
+            const args=['remotion','render','src.jsx','Short',target,`--props=${propsFile}`,'--concurrency=1','--log=error'];
+            console.log(`Rendering ${i+1}/${count}: ${title}`);
+            const run=spawnSync('npx',args,{stdio:'inherit',shell:false});
+            if(run.status!==0){console.error(`Render failed: ${target}`);process.exit(run.status||1);}
+          }
+          console.log(`Success: ${count} MP4 in outputs/`);
+          EOF
+      - name: Paketleri yukle
+        run: npm install --no-audit --no-fund
+      - name: Chromium hazirla
+        run: npx remotion browser ensure
+      - name: Videolari olustur
+        run: node render.mjs
+      - name: MP4 videolari indirilebilir yap
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iphone-shorts-videolar
+          path: outputs/*.mp4
+          if-no-files-found: warn
+          retention-days: 7
