@@ -1,85 +1,341 @@
-name: Minik Kasifler V3.1 - Dogal Turkce Ses
+
+name: Minik Kasifler V3.2 - Dogal Ses
+
 on:
   workflow_dispatch:
     inputs:
-      kategori:
-        description: Bolum secimi
+      bolum:
+        description: Hangi egitici video?
         type: choice
-        required: true
-        default: karisik
         options:
-          - karisik
-          - 01-kayip-balonlar
-          - 02-sayi-treni
-          - 03-hayvan-dostlar
-          - 04-sekil-robotu
-          - 05-paylasma-gunu
-      ses:
-        description: Turkce ses secimi
-        type: choice
-        required: true
-        default: kadin
-        options:
-          - kadin
-          - erkek
-      adet:
-        description: Karisik durumda 1-5 arasi video sayisi
-        type: number
-        required: true
-        default: 2
+          - renkler
+          - sayilar
+          - hayvanlar
+          - sekiller
+          - paylasma
+        default: renkler
+
 permissions:
   contents: read
+
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
+
     env:
-      KATEGORI: ${{ inputs.kategori }}
-      ADET: ${{ inputs.adet }}
-      SES: ${{ inputs.ses }}
+      BOLUM: ${{ inputs.bolum }}
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+
     steps:
-      - name: Depoyu al
-        uses: actions/checkout@v4
-      - name: Node.js 24 kur
+      - name: Node.js kur
         uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - name: Neural Turkce ses motorunu ve FFmpeg kur
-        shell: bash
+
+      - name: FFmpeg kur
         run: |
-          set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
-          python3 -m pip install --user --break-system-packages "edge-tts>=7,<8"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          ffmpeg -version | head -n 1
-          python3 -m pip show edge-tts
-      - name: V3 proje dosyalarini guvenli ac
+
+      - name: Remotion kur
+        run: |
+          npm init -y
+          npm install --no-audit --no-fund \
+            remotion @remotion/cli react react-dom
+
+      - name: Video motorunu hazirla
+        shell: bash
+        run: |
+          mkdir -p public outputs
+
+          cat > video.mjs <<'JS'
+          import React from 'react';
+          import {
+            Composition, registerRoot,
+            AbsoluteFill, Audio, Sequence,
+            staticFile, useCurrentFrame,
+            interpolate
+          } from 'remotion';
+
+          const data = {
+            renkler: [
+              'Renk Avı',
+              'Kırmızı balon!',
+              'Mavi balon!',
+              'Sarı balon!',
+              'Kırmızı, mavi, sarı!'
+            ],
+            sayilar: [
+              'Sayı Treni',
+              'Bir yıldız!',
+              'İki yıldız!',
+              'Üç yıldız!',
+              'Bir, iki, üç!'
+            ],
+            hayvanlar: [
+              'Hayvan Dostlar',
+              'Kedi miyav der.',
+              'Köpek hav hav der.',
+              'Kuş cik cik der.',
+              'Hayvanları öğrendik!'
+            ],
+            sekiller: [
+              'Şekil Oyunu',
+              'Bu bir daire.',
+              'Bu bir kare.',
+              'Bu bir üçgen.',
+              'Daire, kare, üçgen!'
+            ],
+            paylasma: [
+              'Arkadaşlık Günü',
+              'Bir oyuncak bulduk.',
+              'Bir arkadaşımız geldi.',
+              'Sırayla oynayalım!',
+              'Paylaşmak çok güzel!'
+            ]
+          };
+
+          const palette = [
+            '#8B5CF6', '#F87171',
+            '#60A5FA', '#FBBF24', '#34D399'
+          ];
+
+          const Scene = ({text,color,index}) => {
+            const frame = useCurrentFrame();
+            const scale = interpolate(
+              frame,[0,20,150,179],
+              [0.85,1,1,0.95],
+              {
+                extrapolateLeft:'clamp',
+                extrapolateRight:'clamp'
+              }
+            );
+
+            return React.createElement(
+              AbsoluteFill,
+              {
+                style:{
+                  background:
+                    `linear-gradient(160deg,${color},#292050)`,
+                  color:'white',
+                  justifyContent:'center',
+                  alignItems:'center',
+                  textAlign:'center',
+                  padding:45,
+                  fontFamily:'Arial,sans-serif'
+                }
+              },
+              React.createElement(
+                'div',
+                {
+                  style:{
+                    fontSize:110,
+                    marginBottom:40,
+                    transform:`scale(${scale})`
+                  }
+                },
+                ['✨','🎈','⭐','🌈','🎉'][index]
+              ),
+              React.createElement(
+                'div',
+                {
+                  style:{
+                    fontSize:65,
+                    fontWeight:800,
+                    lineHeight:1.3,
+                    transform:`scale(${scale})`
+                  }
+                },
+                text
+              ),
+              React.createElement(
+                'div',
+                {
+                  style:{
+                    position:'absolute',
+                    bottom:90,
+                    fontSize:28
+                  }
+                },
+                'MİNİK KAŞİFLER'
+              )
+            );
+          };
+
+          const Video = ({bolum}) => {
+            const lessons = data[bolum] || data.renkler;
+
+            return React.createElement(
+              AbsoluteFill,
+              null,
+              lessons.map((text,i) =>
+                React.createElement(
+                  Sequence,
+                  {
+                    key:i,
+                    from:i*180,
+                    durationInFrames:180
+                  },
+                  React.createElement(
+                    Scene,
+                    {
+                      text,
+                      color:palette[i],
+                      index:i
+                    }
+                  ),
+                  React.createElement(
+                    Audio,
+                    {src:staticFile(`ses${i}.mp3`)}
+                  )
+                )
+              )
+            );
+          };
+
+          registerRoot(() =>
+            React.createElement(
+              Composition,
+              {
+                id:'Ders',
+                component:Video,
+                durationInFrames:900,
+                fps:30,
+                width:720,
+                height:1280,
+                defaultProps:{bolum:'renkler'}
+              }
+            )
+          );
+          JS
+
+      - name: Dogal Turkce sesleri olustur
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' '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' | base64 --decode | tar -xz
-          test -s src/video.jsx
-          test -s src/episodes.mjs
-          test -s render.mjs
-          echo 'V3 proje dosyalari acildi.'
-      - name: Node paketlerini kur
-        run: npm install --no-audit --no-fund
-      - name: Dogal Turkce seslendirme ve MP4 uret
-        run: node render.mjs
-      - name: MP4 dosyalarini kesin dogrula
-        shell: bash
+
+          test -n "$ELEVENLABS_API_KEY" || {
+            echo "ELEVENLABS_API_KEY eksik"
+            exit 1
+          }
+
+          test -n "$ELEVENLABS_VOICE_ID" || {
+            echo "ELEVENLABS_VOICE_ID eksik"
+            exit 1
+          }
+
+          python3 - <<'PY'
+          import os
+          import json
+          import urllib.request
+          import urllib.error
+
+          scripts = {
+            "renkler": [
+              "Merhaba minik kaşif! Renkleri bulalım!",
+              "Bak! Kırmızı balon!",
+              "Şimdi mavi balon!",
+              "Yaşasın! Sarı balon da burada!",
+              "Kırmızı, mavi, sarı! Harikasın!"
+            ],
+            "sayilar": [
+              "Sayı trenine hoş geldin!",
+              "Bir yıldız!",
+              "İki yıldız!",
+              "Üç yıldız!",
+              "Bir, iki, üç! Aferin!"
+            ],
+            "hayvanlar": [
+              "Hayvan dostlarımızı tanıyalım!",
+              "Kedi miyav der!",
+              "Köpek hav hav der!",
+              "Kuş cik cik der!",
+              "Hepsini öğrendik! Harika!"
+            ],
+            "sekiller": [
+              "Haydi şekillerle oynayalım!",
+              "Bu bir daire!",
+              "Bak! Bu bir kare!",
+              "İşte bir üçgen!",
+              "Daire, kare, üçgen! Aferin!"
+            ],
+            "paylasma": [
+              "Bugün arkadaşlık günü!",
+              "Bir oyuncak bulduk!",
+              "Arkadaşımız da oynamak istiyor!",
+              "Haydi sırayla oynayalım!",
+              "Paylaşmak çok güzel!"
+            ]
+          }
+
+          lesson = os.environ["BOLUM"]
+          key = os.environ["ELEVENLABS_API_KEY"]
+          voice = os.environ["ELEVENLABS_VOICE_ID"]
+
+          for i,text in enumerate(scripts[lesson]):
+              url = (
+                  "https://api.elevenlabs.io/v1/"
+                  "text-to-speech/" + voice
+              )
+              body = json.dumps({
+                  "text":text,
+                  "model_id":"eleven_multilingual_v2",
+                  "voice_settings":{
+                      "stability":0.45,
+                      "similarity_boost":0.75,
+                      "style":0.25
+                  }
+              }).encode()
+
+              request = urllib.request.Request(
+                  url,
+                  data=body,
+                  headers={
+                      "xi-api-key":key,
+                      "Content-Type":"application/json",
+                      "Accept":"audio/mpeg"
+                  },
+                  method="POST"
+              )
+
+              try:
+                  with urllib.request.urlopen(
+                      request,timeout=120
+                  ) as response:
+                      audio=response.read()
+              except urllib.error.HTTPError as error:
+                  print("Ses API hatasi:",error.code)
+                  raise
+
+              if len(audio)<3000:
+                  raise RuntimeError("Ses dosyasi bos")
+
+              with open(
+                  f"public/ses{i}.mp3","wb"
+              ) as file:
+                  file.write(audio)
+
+              print(f"Ses {i+1} hazir")
+          PY
+
+          echo '{"bolum":"'"$BOLUM"'"}' > props.json
+
+      - name: MP4 videoyu olustur
         run: |
-          set -euo pipefail
-          test -d outputs
-          find outputs -maxdepth 1 -name '*.mp4' -size +15k -print
-          count=$(find outputs -maxdepth 1 -name '*.mp4' -size +15k | wc -l)
-          test "$count" -ge 1 || { echo 'HATA: MP4 olusmadi'; exit 1; }
-          echo "MP4 sayisi: $count"
-      - name: MP4leri indirilebilir yap
+          npx remotion render video.mjs Ders \
+            outputs/minik-kasifler.mp4 \
+            --props=props.json \
+            --codec=h264 \
+            --concurrency=2
+
+          test -s outputs/minik-kasifler.mp4
+
+      - name: Videoyu indirilebilir yap
         uses: actions/upload-artifact@v6
         with:
-          name: minik-kasifler-v3-1-dogal-ses-MP4
+          name: minik-kasifler-dogal-ses
           path: outputs/*.mp4
           if-no-files-found: error
           retention-days: 7
