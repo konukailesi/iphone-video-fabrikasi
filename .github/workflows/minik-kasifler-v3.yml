@@ -44,11 +44,15 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - name: Neural Turkce ses motorunu kur
+      - name: Neural Turkce ses motorunu ve FFmpeg kur
+        shell: bash
         run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
           python3 -m pip install --user --break-system-packages "edge-tts>=7,<8"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          command -v ffmpeg
+          ffmpeg -version | head -n 1
           python3 -m pip show edge-tts
       - name: V3 proje dosyalarini guvenli ac
         shell: bash
