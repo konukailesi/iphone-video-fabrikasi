@@ -16,12 +16,14 @@ jobs:
       - name: Blender ve grafik kutuphaneleri
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y blender libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb curl
+          sudo apt-get install -y blender libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb curl git-lfs
       - name: Animasyonlu acik lisansli karakteri indir
         run: |
           set -euo pipefail
           mkdir -p source outputs
-          curl --fail --location --retry 3 --silent --show-error "https://raw.githubusercontent.com/chickensoft-games/Chicken/main/chickensoft_mascot_model.blend" --output source/chickensoft_mascot_model.blend
+          git clone --depth 1 https://github.com/chickensoft-games/Chicken.git /tmp/chickensoft-source
+          git -C /tmp/chickensoft-source lfs pull
+          cp /tmp/chickensoft-source/chickensoft_mascot_model.blend source/chickensoft_mascot_model.blend
           test "$(stat -c%s source/chickensoft_mascot_model.blend)" -gt 100000
       - name: Gercek karakter iskeleti ve animasyonlarini incele
         run: |
