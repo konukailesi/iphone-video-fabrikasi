@@ -36,7 +36,19 @@ for ob in bpy.data.objects:
 bpy.ops.object.camera_add(location=(0,-6.6,2.4))
 cam=bpy.context.object
 cam.rotation_euler=(Vector((0,0,1.04))-cam.location).to_track_quat('-Z','Y').to_euler()
-cam.data.type='ORTHO';cam.data.ortho_scale=3.5;s.camera=cam
+cam.data.type='ORTHO';cam.data.ortho_scale=6.2;s.camera=cam
+for m in mesh.data.materials:
+    if m:
+        print('ORIGINAL_MATERIAL',m.name,flush=True)
+        mn=m.name.lower()
+        if 'eye' in mn or 'pupil' in mn:
+            m.diffuse_color=(.035,.06,.10,1)
+        elif 'beak' in mn or 'feet' in mn or 'leg' in mn:
+            m.diffuse_color=(1,.40,.06,1)
+        elif 'comb' in mn:
+            m.diffuse_color=(.97,.18,.16,1)
+        else:
+            m.diffuse_color=(1,.78,.18,1)
 world=bpy.data.worlds[0] if len(bpy.data.worlds) else bpy.data.worlds.new('Pastel sky')
 world.use_nodes=True
 world.node_tree.nodes['Background'].inputs['Color'].default_value=(.40,.72,1,1)
@@ -46,6 +58,8 @@ s.display.shading.light='STUDIO'
 s.display.shading.color_type='MATERIAL'
 s.display.shading.show_shadows=True
 s.display.shading.show_cavity=True
+s.display.shading.background_type='VIEWPORT'
+s.display.shading.background_color=(.64,.82,1)
 s.render.resolution_x=540
 s.render.resolution_y=960
 s.render.resolution_percentage=100
