@@ -1,0 +1,515 @@
+name: Minik Kasifler V3.6 - Tuylu 3D Karakterler
+
+on:
+  workflow_dispatch:
+    inputs:
+      bolum:
+        description: 'Bolum'
+        type: choice
+        required: true
+        default: kayip_balonlar
+        options:
+          - kayip_balonlar
+          - sayi_treni
+          - hayvan_dostlar
+      ses_profili:
+        description: 'Karakter sesi'
+        type: choice
+        required: true
+        default: A
+        options:
+          - A
+          - B
+      mod:
+        description: 'Hizli ses testi veya tam video'
+        type: choice
+        required: true
+        default: video
+        options:
+          - ses_testi
+          - video
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BOLUM: ${{ inputs.bolum }}
+      SES_PROFILI: ${{ inputs.ses_profili }}
+      MOD: ${{ inputs.mod }}
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Node kur
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: FFmpeg ve font kur
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -n 1
+
+      - name: Pocket TTS kur
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install pocket-tts-turkish
+
+      - name: Remotion kur
+        run: |
+          npm init -y
+          npm install --no-audit --no-fund remotion @remotion/cli react react-dom
+
+      - name: V3.6 dosyalarini olustur
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src public outputs
+
+          cat > src/tts_v36.py <<'PYEND'
+          import json, math, os, struct, wave
+          from pathlib import Path
+          from pocket_tts_turkish import TurkishTTS, save_wav
+
+          lesson = os.getenv('BOLUM', 'kayip_balonlar')
+          profile = os.getenv('SES_PROFILI', 'A')
+          mode = os.getenv('MOD', 'video')
+
+          lessons = {
+            'kayip_balonlar': [
+              {'who':'tavsan','emotion':'şaşkın','speech':'Aaa! Üç balonum kaybolmuş! Bana yardım eder misin?','title':'Kayıp Balonlar','subtitle':'Balonları bulalım!','set':'garden','item':'none','mood':'problem'},
+              {'who':'civciv','emotion':'mutlu','speech':'Bak! Çalıların yanında kırmızı balon var!','title':'Kırmızı Balon','subtitle':'Kırmızıyı bulduk.','set':'garden_bush','item':'red_balloon','mood':'found'},
+              {'who':'tavsan','emotion':'sakin','speech':'Harika! Şimdi mavi balon nerede? Hadi göster!','title':'Mavi Balon','subtitle':'Maviyi ara.','set':'garden_house','item':'blue_balloon_hidden','mood':'question'},
+              {'who':'civciv','emotion':'mutlu','speech':'İşte burada! Oyuncak evin yanında mavi balon!','title':'Mavi Balon','subtitle':'Maviyi de bulduk.','set':'garden_house','item':'blue_balloon','mood':'found'},
+              {'who':'tavsan','emotion':'sakin','speech':'Bir tane daha kaldı. Sarı balonu bulabilir misin?','title':'Sarı Balon','subtitle':'Sarıyı ara.','set':'garden_sun','item':'yellow_balloon_hidden','mood':'question'},
+              {'who':'civciv','emotion':'mutlu','speech':'Yaşasın! Sarı balon da burada!','title':'Sarı Balon','subtitle':'Üçüncü balon bulundu.','set':'garden_sun','item':'yellow_balloon','mood':'found'},
+              {'who':'tavsan','emotion':'mutlu','speech':'Şimdi sayalım: bir, iki, üç balon! Aferin sana!','title':'Bir İki Üç','subtitle':'Üç balon saydık.','set':'garden_party','item':'three_balloons','mood':'celebrate'},
+            ],
+            'sayi_treni': [
+              {'who':'tavsan','emotion':'mutlu','speech':'Sayı treni geliyor! Hadi birden üçe kadar sayalım!','title':'Sayı Treni','subtitle':'Hazır mısın?','set':'train_start','item':'train','mood':'intro'},
+              {'who':'civciv','emotion':'sakin','speech':'Bir yıldız! Sadece bir tane.','title':'Bir','subtitle':'1 yıldız','set':'train_one','item':'one_star','mood':'count'},
+              {'who':'tavsan','emotion':'mutlu','speech':'Şimdi iki yıldız. Bir, iki!','title':'İki','subtitle':'2 yıldız','set':'train_two','item':'two_stars','mood':'count'},
+              {'who':'civciv','emotion':'mutlu','speech':'Ve üç yıldız! Bir, iki, üç!','title':'Üç','subtitle':'3 yıldız','set':'train_three','item':'three_stars','mood':'count'},
+              {'who':'tavsan','emotion':'mutlu','speech':'Harika saydın! Bir, iki, üç! Bravo!','title':'Bravo','subtitle':'Sayıları öğrendik.','set':'train_party','item':'three_stars','mood':'celebrate'},
+            ],
+            'hayvan_dostlar': [
+              {'who':'tavsan','emotion':'mutlu','speech':'Hayvan dostlarımız saklanmış. Hadi onları bulalım!','title':'Hayvan Dostlar','subtitle':'Kimler burada?','set':'farm_intro','item':'none','mood':'intro'},
+              {'who':'civciv','emotion':'mutlu','speech':'Miyav diyen kim? Kedi!','title':'Kedi','subtitle':'Miyav miyav.','set':'farm_cat','item':'cat','mood':'found'},
+              {'who':'tavsan','emotion':'mutlu','speech':'Hav hav diyen kim? Köpek!','title':'Köpek','subtitle':'Hav hav.','set':'farm_dog','item':'dog','mood':'found'},
+              {'who':'civciv','emotion':'mutlu','speech':'Cik cik! İşte küçük civciv!','title':'Civciv','subtitle':'Cik cik.','set':'farm_chick','item':'chick','mood':'found'},
+              {'who':'tavsan','emotion':'mutlu','speech':'Kedi, köpek ve civciv! Hepsini öğrendin!','title':'Hepsini Bulduk','subtitle':'Aferin!','set':'farm_party','item':'all_animals','mood':'celebrate'},
+            ],
+          }
+
+          test_dialogue = [
+            {'who':'tavsan','emotion':'mutlu','speech':'Merhaba! Ben Mavi Tavşan. Hadi birlikte öğrenelim!','title':'Mavi Tavşan','subtitle':'Ses testi','set':'test_blue','item':'none','mood':'intro'},
+            {'who':'civciv','emotion':'mutlu','speech':'Ben de Sarı Civciv! Yaşasın, oyun zamanı!','title':'Sarı Civciv','subtitle':'Ses testi','set':'test_yellow','item':'none','mood':'intro'},
+          ]
+
+          if lesson not in lessons:
+            raise SystemExit('Geçersiz bölüm')
+          if profile not in ('A', 'B'):
+            raise SystemExit('Geçersiz ses profili')
+          if mode not in ('ses_testi', 'video'):
+            raise SystemExit('Geçersiz mod')
+
+          scenes = test_dialogue if mode == 'ses_testi' else lessons[lesson]
+          voices = {
+            'A': {'tavsan': 'female_1', 'civciv': 'female_2'},
+            'B': {'tavsan': 'female_2', 'civciv': 'female_3'},
+          }
+
+          def generate_tone(path, freq=660.0, duration=0.18, vol=0.25, sweep=False):
+            sr = 44100
+            total = int(sr * duration)
+            with wave.open(path, 'w') as wf:
+              wf.setnchannels(1)
+              wf.setsampwidth(2)
+              wf.setframerate(sr)
+              frames = []
+              for i in range(total):
+                t = i / sr
+                current = freq + (240 * t / duration if sweep else 0)
+                env = min(1.0, i / (sr * 0.03)) * min(1.0, (total - i) / (sr * 0.05))
+                sample = math.sin(2 * math.pi * current * t) * vol * env
+                frames.append(struct.pack('<h', int(max(-1, min(1, sample)) * 32767)))
+              wf.writeframes(b''.join(frames))
+
+          Path('public').mkdir(exist_ok=True)
+          generate_tone('public/sfx_find.wav', freq=760.0, duration=0.16, vol=0.23, sweep=True)
+          generate_tone('public/sfx_cheer.wav', freq=540.0, duration=0.28, vol=0.22, sweep=True)
+
+          print('Pocket TTS modeli yükleniyor...', flush=True)
+          model = TurkishTTS.from_pretrained(device='cpu')
+          output = []
+          for idx, scene in enumerate(scenes):
+            voice = voices[profile][scene['who']]
+            print(f"Ses üretimi {idx + 1}/{len(scenes)}: {scene['who']} - {voice} - {scene['emotion']}", flush=True)
+            audio = model.generate(scene['speech'], voice=voice, emotion=scene['emotion'], seed=130 + idx)
+            wav_path = f'public/scene_{idx}.wav'
+            save_wav(wav_path, audio, model.sample_rate)
+            with wave.open(wav_path, 'rb') as wf:
+              duration = wf.getnframes() / wf.getframerate()
+            hold = 0.95 if scene['mood'] in ('question', 'problem') else 0.62
+            scene_frames = math.ceil(max(4.3, duration + hold) * 30)
+            output.append({
+              'id': idx,
+              'who': scene['who'],
+              'speech': scene['speech'],
+              'title': scene['title'],
+              'subtitle': scene['subtitle'],
+              'set': scene['set'],
+              'item': scene['item'],
+              'mood': scene['mood'],
+              'audio': f'scene_{idx}.wav',
+              'effect': 'sfx_cheer.wav' if scene['mood'] == 'celebrate' else ('sfx_find.wav' if scene['mood'] == 'found' else None),
+              'durationInFrames': scene_frames,
+            })
+
+          Path('src/scenes-data.json').write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding='utf-8')
+          print('Sahne sayısı:', len(output), flush=True)
+          PYEND
+
+          cat > src/index.jsx <<'JSEND'
+          import React from 'react';
+          import {
+            AbsoluteFill,
+            Audio,
+            Composition,
+            Sequence,
+            staticFile,
+            useCurrentFrame,
+            useVideoConfig,
+            spring,
+            interpolate,
+            registerRoot,
+          } from 'remotion';
+          import scenes from './scenes-data.json';
+
+          const totalDuration = scenes.reduce((sum, s) => sum + s.durationInFrames, 0);
+
+          const Sky = ({setName}) => {
+            const palettes = {
+              garden: ['#92dcff', '#eefaff'],
+              garden_bush: ['#8bd6ff', '#ecfbff'],
+              garden_house: ['#8fd3ff', '#f8fbff'],
+              garden_sun: ['#8fd6ff', '#fff4b7'],
+              garden_party: ['#87d4ff', '#ffdbee'],
+              train_start: ['#8fd7ff', '#f2feff'],
+              train_one: ['#93d4ff', '#fff2c3'],
+              train_two: ['#90d0ff', '#eef8ff'],
+              train_three: ['#8fd4ff', '#fff4c9'],
+              train_party: ['#8ad0ff', '#ffdbee'],
+              farm_intro: ['#95daff', '#efffe8'],
+              farm_cat: ['#98d7ff', '#fff1dc'],
+              farm_dog: ['#96d4ff', '#ffedd8'],
+              farm_chick: ['#9edaff', '#fff8c9'],
+              farm_party: ['#93d4ff', '#ffe3f1'],
+              test_blue: ['#92dbff', '#f2fbff'],
+              test_yellow: ['#fff0ab', '#fff9dc'],
+            };
+            const [top, bottom] = palettes[setName] || palettes.garden;
+            return <AbsoluteFill style={{background: `linear-gradient(180deg, ${top}, ${bottom})`}} />;
+          };
+
+          const Cloud = ({left, top, scale}) => (
+            <div style={{position:'absolute', left, top, transform:`scale(${scale})`, opacity:0.95}}>
+              <div style={{width:120, height:46, borderRadius:40, background:'#fff', position:'relative', boxShadow:'0 10px 15px rgba(0,0,0,0.03)'}}>
+                <div style={{position:'absolute', width:42, height:42, borderRadius:'50%', background:'#fff', left:8, top:-14}} />
+                <div style={{position:'absolute', width:60, height:60, borderRadius:'50%', background:'#fff', left:34, top:-26}} />
+                <div style={{position:'absolute', width:40, height:40, borderRadius:'50%', background:'#fff', left:78, top:-8}} />
+              </div>
+            </div>
+          );
+
+          const Ground = () => (
+            <>
+              <div style={{position:'absolute', left:0, right:0, bottom:0, height:260, background:'#8ddd7b'}} />
+              <div style={{position:'absolute', left:0, right:0, bottom:205, height:95, background:'#72c861', borderTopLeftRadius:180, borderTopRightRadius:180}} />
+              <div style={{position:'absolute', left:-30, right:-30, bottom:178, height:28, background:'#5fb952', borderRadius:30, opacity:0.6}} />
+            </>
+          );
+
+          const Flower = ({left, bottom, color}) => (
+            <div style={{position:'absolute', left, bottom}}>
+              <div style={{position:'absolute', left:16, bottom:0, width:5, height:26, background:'#44a44c', borderRadius:5}} />
+              <div style={{position:'absolute', left:0, bottom:18, fontSize:26, color}}>{'✿'}</div>
+            </div>
+          );
+
+          const Bush = ({left, bottom, scale = 1}) => (
+            <div style={{position:'absolute', left, bottom, transform:`scale(${scale})`}}>
+              {[0, 40, 82].map((x, i) => (
+                <div key={i} style={{position:'absolute', left:x, bottom:0, width:72, height:58, borderRadius:999, background:i === 1 ? '#37a84d' : '#2f9444', boxShadow:'inset 0 -10px 0 rgba(0,0,0,0.06)'}} />
+              ))}
+            </div>
+          );
+
+          const ToyHouse = () => (
+            <div style={{position:'absolute', right:74, bottom:178, width:180, height:164}}>
+              <div style={{position:'absolute', inset:0, background:'linear-gradient(180deg,#ffd7a3,#ffbd80)', borderRadius:28, border:'7px solid #f8b068', boxShadow:'0 12px 20px rgba(0,0,0,0.08)'}} />
+              <div style={{position:'absolute', left:18, right:18, top:-54, height:84, background:'linear-gradient(180deg,#ff8ea1,#ff6d8a)', clipPath:'polygon(50% 0%, 100% 100%, 0% 100%)'}} />
+              <div style={{position:'absolute', left:57, bottom:0, width:62, height:84, background:'#fff1d4', borderTopLeftRadius:24, borderTopRightRadius:24, border:'5px solid #f5c17e'}} />
+              <div style={{position:'absolute', right:25, top:36, width:38, height:38, borderRadius:14, background:'#eaf6ff', border:'5px solid #f6b36f'}} />
+            </div>
+          );
+
+          const Balloon = ({color, left, top, hidden, revealFrom = 'bottom'}) => {
+            const frame = useCurrentFrame();
+            const yBob = Math.sin(frame / 12) * 7;
+            const reveal = spring({frame, fps:30, config:{damping:13, stiffness:85}});
+            const offset = hidden ? 26 * (1 - reveal) : (revealFrom === 'bottom' ? 38 * (1 - reveal) : -28 * (1 - reveal));
+            return (
+              <div style={{position:'absolute', left, top, transform:`translateY(${offset + yBob}px)`, opacity:hidden ? 0.22 + reveal * 0.2 : 0.2 + reveal * 0.8}}>
+                <div style={{width:88, height:112, background: `radial-gradient(circle at 35% 28%, #ffffffbb 0 12%, ${color} 16% 100%)`, borderRadius:'50% 50% 48% 48%', boxShadow:'inset -8px -12px 0 rgba(0,0,0,0.08), 0 8px 16px rgba(0,0,0,0.08)'}} />
+                <div style={{margin:'0 auto', width:9, height:14, background:color, borderRadius:6}} />
+                <div style={{margin:'0 auto', width:2, height:102, background:'#7b5b3d'}} />
+              </div>
+            );
+          };
+
+          const Sparkles = ({left, top}) => {
+            const frame = useCurrentFrame();
+            const pulse = 0.8 + Math.sin(frame / 6) * 0.2;
+            return (
+              <div style={{position:'absolute', left, top, transform:`scale(${pulse})`}}>
+                <div style={{fontSize:32}}>✨</div>
+                <div style={{fontSize:18, position:'absolute', left:24, top:20}}>✨</div>
+                <div style={{fontSize:18, position:'absolute', left:-10, top:26}}>✨</div>
+              </div>
+            );
+          };
+
+          const Rabbit3D = ({speaking}) => {
+            const frame = useCurrentFrame();
+            const blink = frame % 90 > 81;
+            const mouthOpen = speaking && frame % 10 < 5;
+            return (
+              <svg viewBox="0 0 320 360" width="320" height="360">
+                <defs>
+                  <radialGradient id="rbBody" cx="35%" cy="30%">
+                    <stop offset="0%" stopColor="#e8f7ff" />
+                    <stop offset="45%" stopColor="#a9d9ff" />
+                    <stop offset="100%" stopColor="#6eb7ff" />
+                  </radialGradient>
+                  <radialGradient id="rbBelly" cx="40%" cy="35%">
+                    <stop offset="0%" stopColor="#ffffff" />
+                    <stop offset="100%" stopColor="#eaf5ff" />
+                  </radialGradient>
+                </defs>
+                <ellipse cx="105" cy="52" rx="24" ry="84" fill="url(#rbBody)" transform="rotate(-6 105 52)"/>
+                <ellipse cx="164" cy="48" rx="24" ry="84" fill="url(#rbBody)" transform="rotate(8 164 48)"/>
+                <ellipse cx="105" cy="60" rx="11" ry="58" fill="#ffd7ef" transform="rotate(-6 105 60)"/>
+                <ellipse cx="164" cy="58" rx="11" ry="58" fill="#ffd7ef" transform="rotate(8 164 58)"/>
+                <ellipse cx="135" cy="142" rx="88" ry="84" fill="url(#rbBody)" />
+                <ellipse cx="138" cy="252" rx="84" ry="74" fill="url(#rbBody)" />
+                <ellipse cx="140" cy="261" rx="48" ry="54" fill="url(#rbBelly)" />
+                <ellipse cx="88" cy="142" rx="20" ry="14" fill="#ffffff55" />
+                <ellipse cx="194" cy="210" rx="16" ry="12" fill="#0000000f" />
+                <ellipse cx="109" cy="140" rx="14" ry={blink ? 3 : 16} fill="#26395b" />
+                <ellipse cx="161" cy="140" rx="14" ry={blink ? 3 : 16} fill="#26395b" />
+                <ellipse cx="96" cy="157" rx="11" ry="7" fill="#ffb6d5" opacity="0.75" />
+                <ellipse cx="174" cy="157" rx="11" ry="7" fill="#ffb6d5" opacity="0.75" />
+                <ellipse cx="136" cy="170" rx="34" ry="20" fill="#ffffff" />
+                <ellipse cx="136" cy="164" rx="9" ry="6" fill="#ff86b1" />
+                <path d={mouthOpen ? 'M120 181 Q136 202 152 181' : 'M122 181 Q136 191 150 181'} stroke="#26395b" strokeWidth="5" fill={mouthOpen ? '#ffbdd7' : 'none'} strokeLinecap="round"/>
+                <path d="M67 228 Q80 204 103 214" stroke="#8fcfff" strokeWidth="18" fill="none" strokeLinecap="round"/>
+                <path d="M170 214 Q194 204 206 228" stroke="#8fcfff" strokeWidth="18" fill="none" strokeLinecap="round"/>
+                <ellipse cx="100" cy="322" rx="24" ry="18" fill="#ffffff" />
+                <ellipse cx="172" cy="322" rx="24" ry="18" fill="#ffffff" />
+                <circle cx="214" cy="250" r="18" fill="#ffffffaa" />
+                <path d="M86 92 l-14 -16 M185 95 l14 -12" stroke="#7ebcff" strokeWidth="6" strokeLinecap="round" />
+              </svg>
+            );
+          };
+
+          const Chick3D = ({speaking}) => {
+            const frame = useCurrentFrame();
+            const blink = frame % 84 > 76;
+            const mouthOpen = speaking && frame % 10 < 5;
+            return (
+              <svg viewBox="0 0 320 360" width="320" height="360">
+                <defs>
+                  <radialGradient id="chBody" cx="35%" cy="30%">
+                    <stop offset="0%" stopColor="#fff9b7" />
+                    <stop offset="44%" stopColor="#ffe666" />
+                    <stop offset="100%" stopColor="#ffc838" />
+                  </radialGradient>
+                </defs>
+                <ellipse cx="160" cy="245" rx="86" ry="84" fill="url(#chBody)" />
+                <ellipse cx="160" cy="142" rx="68" ry="64" fill="url(#chBody)" />
+                <circle cx="214" cy="98" r="18" fill="#ffd84c" />
+                <circle cx="232" cy="80" r="16" fill="#ffd84c" />
+                <circle cx="110" cy="142" r={blink ? 4 : 12} fill="#2d2d58" />
+                <circle cx="164" cy="142" r={blink ? 4 : 12} fill="#2d2d58" />
+                <ellipse cx="94" cy="160" rx="12" ry="7" fill="#ffbf76" opacity="0.55" />
+                <ellipse cx="180" cy="160" rx="12" ry="7" fill="#ffbf76" opacity="0.55" />
+                <path d={mouthOpen ? 'M137 159 L111 177 L163 177 Z' : 'M137 159 L117 172 L157 172 Z'} fill="#ff9f42" />
+                <path d="M102 242 Q72 232 66 206" stroke="#ffcf3e" strokeWidth="18" fill="none" strokeLinecap="round" />
+                <path d="M218 242 Q248 232 254 206" stroke="#ffcf3e" strokeWidth="18" fill="none" strokeLinecap="round" />
+                <path d="M134 314 L122 346" stroke="#ff9f42" strokeWidth="8" strokeLinecap="round" />
+                <path d="M184 314 L196 346" stroke="#ff9f42" strokeWidth="8" strokeLinecap="round" />
+                <path d="M115 348 H133 M110 356 H132" stroke="#ff9f42" strokeWidth="5" strokeLinecap="round" />
+                <path d="M186 348 H204 M188 356 H208" stroke="#ff9f42" strokeWidth="5" strokeLinecap="round" />
+                <ellipse cx="130" cy="105" rx="12" ry="8" fill="#ffffff55" />
+                <ellipse cx="144" cy="246" rx="24" ry="16" fill="#ffffff20" />
+              </svg>
+            );
+          };
+
+          const Character = ({who, speaking}) => {
+            const frame = useCurrentFrame();
+            const {fps} = useVideoConfig();
+            const anim = spring({frame, fps, config:{damping:13, stiffness:90}});
+            const bounce = speaking ? Math.sin(frame / 5.6) * 8 : Math.sin(frame / 18) * 2;
+            const scale = speaking ? 1.03 + anim * 0.02 : 0.98;
+            const isRabbit = who === 'tavsan';
+            return (
+              <div style={{position:'absolute', left:isRabbit ? 32 : undefined, right:isRabbit ? undefined : 24, bottom:78, width:320, height:360, transform:`translateY(${bounce}px) scale(${scale})`, filter:'drop-shadow(0 18px 18px rgba(0,0,0,0.14))'}}>
+                {isRabbit ? <Rabbit3D speaking={speaking} /> : <Chick3D speaking={speaking} />}
+              </div>
+            );
+          };
+
+          const SpeechBubble = ({scene}) => {
+            const left = scene.who === 'tavsan' ? 220 : 72;
+            const right = scene.who === 'tavsan' ? 68 : 212;
+            return (
+              <div style={{position:'absolute', left, right, bottom:28, background:'#ffffff', borderRadius:34, padding:'18px 24px', boxShadow:'0 12px 30px rgba(0,0,0,0.16)', color:'#2e2e57'}}>
+                <div style={{fontSize:19, fontWeight:800, color:'#5f6a88', marginBottom:4}}>{scene.subtitle}</div>
+                <div style={{fontSize:32, lineHeight:1.22, fontWeight:700}}>{scene.speech}</div>
+              </div>
+            );
+          };
+
+          const SetDecor = ({scene}) => {
+            const setName = scene.set;
+            return (
+              <>
+                <Sky setName={setName} />
+                <Cloud left={55} top={78} scale={1} />
+                <Cloud left={468} top={122} scale={0.84} />
+                <Ground />
+                <Flower left={70} bottom={160} color="#ff73a9" />
+                <Flower left={120} bottom={154} color="#ffd157" />
+                <Flower left={600} bottom={150} color="#7d9eff" />
+                <Bush left={44} bottom={170} scale={1} />
+                <Bush left={520} bottom={176} scale={0.92} />
+                {(setName.includes('house') || setName === 'garden_party') && <ToyHouse />}
+                {scene.item === 'red_balloon' && <><Balloon color="#ef4444" left={494} top={150} /><Sparkles left={578} top={168} /></>}
+                {scene.item === 'blue_balloon_hidden' && <Balloon color="#2563eb" left={516} top={138} hidden />}
+                {scene.item === 'blue_balloon' && <><Balloon color="#2563eb" left={516} top={138} /><Sparkles left={608} top={154} /></>}
+                {scene.item === 'yellow_balloon_hidden' && <Balloon color="#facc15" left={520} top={132} hidden />}
+                {scene.item === 'yellow_balloon' && <><Balloon color="#facc15" left={520} top={132} /><Sparkles left={610} top={146} /></>}
+                {scene.item === 'three_balloons' && <>
+                  <Balloon color="#ef4444" left={422} top={110} />
+                  <Balloon color="#2563eb" left={510} top={90} />
+                  <Balloon color="#facc15" left={596} top={120} />
+                  <Sparkles left={494} top={82} />
+                </>}
+                {setName.startsWith('train_') && (
+                  <div style={{position:'absolute', left:250, bottom:168, width:330, height:126}}>
+                    {[0,1,2].map((n) => (
+                      <div key={n} style={{position:'absolute', left:n*102, bottom:0, width:92, height:70, background:n === 0 ? '#ff9fb0' : n === 1 ? '#7cc0ff' : '#ffd460', border:'5px solid #ffffff', borderRadius:18, boxShadow:'0 10px 14px rgba(0,0,0,0.08)'}}>
+                        <div style={{fontSize:34, fontWeight:800, color:'#35425d', textAlign:'center', marginTop:12}}>{n+1}</div>
+                        <div style={{position:'absolute', left:14, bottom:-17, width:18, height:18, borderRadius:99, background:'#444c66'}} />
+                        <div style={{position:'absolute', right:14, bottom:-17, width:18, height:18, borderRadius:99, background:'#444c66'}} />
+                      </div>
+                    ))}
+                    <div style={{position:'absolute', left:-68, bottom:16, width:62, height:40, borderRadius:16, background:'#7c3aed'}} />
+                  </div>
+                )}
+                {scene.item === 'one_star' && <div style={{position:'absolute', right:94, top:210, fontSize:92}}>⭐</div>}
+                {scene.item === 'two_stars' && <div style={{position:'absolute', right:86, top:210, fontSize:84}}>⭐ ⭐</div>}
+                {scene.item === 'three_stars' && <div style={{position:'absolute', right:76, top:210, fontSize:76}}>⭐ ⭐ ⭐</div>}
+                {scene.item === 'cat' && <div style={{position:'absolute', right:86, top:212, fontSize:132}}>🐱</div>}
+                {scene.item === 'dog' && <div style={{position:'absolute', right:86, top:212, fontSize:132}}>🐶</div>}
+                {scene.item === 'chick' && <div style={{position:'absolute', right:86, top:212, fontSize:132}}>🐥</div>}
+                {scene.item === 'all_animals' && <div style={{position:'absolute', right:52, top:218, fontSize:94}}>🐱 🐶 🐥</div>}
+              </>
+            );
+          };
+
+          const Scene = ({scene}) => {
+            const frame = useCurrentFrame();
+            const zoom = interpolate(frame, [0, scene.durationInFrames], [1.0, scene.mood === 'celebrate' ? 1.07 : 1.04]);
+            return (
+              <AbsoluteFill style={{transform:`scale(${zoom})`}}>
+                <SetDecor scene={scene} />
+                <div style={{position:'absolute', left:28, top:28, background:'#ffffffbf', borderRadius:18, padding:'10px 16px', color:'#2f2f58', boxShadow:'0 8px 20px rgba(0,0,0,0.08)'}}>
+                  <div style={{fontSize:29, fontWeight:800}}>{scene.title}</div>
+                </div>
+                <Character who="tavsan" speaking={scene.who === 'tavsan'} />
+                <Character who="civciv" speaking={scene.who === 'civciv'} />
+                <SpeechBubble scene={scene} />
+                <Audio src={staticFile(scene.audio)} />
+                {scene.effect ? <Audio src={staticFile(scene.effect)} volume={0.35} /> : null}
+              </AbsoluteFill>
+            );
+          };
+
+          const Video = () => {
+            let cursor = 0;
+            return (
+              <AbsoluteFill>
+                {scenes.map((scene) => {
+                  const from = cursor;
+                  cursor += scene.durationInFrames;
+                  return (
+                    <Sequence key={scene.id} from={from} durationInFrames={scene.durationInFrames}>
+                      <Scene scene={scene} />
+                    </Sequence>
+                  );
+                })}
+              </AbsoluteFill>
+            );
+          };
+
+          const Root = () => (
+            <Composition id="MinikKasiflerV36" component={Video} durationInFrames={totalDuration} fps={30} width={720} height={1280} />
+          );
+
+          registerRoot(Root);
+          JSEND
+
+      - name: Sesleri ve sahneleri hazirla
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/tts_v36.py
+          test -s src/scenes-data.json
+          test -s public/scene_0.wav
+
+      - name: MP4 olustur
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="outputs/${BOLUM}-${SES_PROFILI}-${MOD}-v36.mp4"
+          npx remotion render src/index.jsx MinikKasiflerV36 "$OUT" --codec=h264 --concurrency=2
+          test -s "$OUT"
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1 "$OUT" | grep -q h264
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of default=noprint_wrappers=1 "$OUT" | grep -q audio
+
+      - name: MP4 ve ses dosyalarini yukle
+        uses: actions/upload-artifact@v6
+        with:
+          name: minik-kasifler-v36-${{ inputs.bolum }}-${{ inputs.ses_profili }}-${{ inputs.mod }}
+          path: |
+            outputs/*.mp4
+            public/*.wav
+            src/scenes-data.json
+          if-no-files-found: error
+          retention-days: 7
