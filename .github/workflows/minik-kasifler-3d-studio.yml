@@ -16,13 +16,13 @@ jobs:
       - name: Blender ve FFmpeg kur
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y blender ffmpeg
+          sudo apt-get install -y blender ffmpeg libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb
           blender --version | head -n 2
       - name: Gercek 3D animasyonu render et
         run: |
           set -euo pipefail
           mkdir -p outputs
-          blender -b -t 2 --python 3d-studio/render.py
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 1280x720x24' blender -b -t 2 --python 3d-studio/render.py
           test -s /tmp/frames/frame_0001.png
           ffmpeg -hide_banner -loglevel error -y -framerate 12 -start_number 1 -i /tmp/frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -movflags +faststart outputs/Minik_Kasifler_3D_Pilot.mp4
           test -s outputs/Minik_Kasifler_3D_Pilot.mp4
