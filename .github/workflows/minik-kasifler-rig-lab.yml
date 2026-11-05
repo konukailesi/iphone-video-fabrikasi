@@ -1,0 +1,35 @@
+name: Minik Kasifler - Rigged Character Lab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/minik-kasifler-rig-lab.yml'
+      - '3d-studio/rig-lab/**'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Blender ve grafik kutuphaneleri
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y blender libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb curl
+      - name: Animasyonlu acik lisansli karakteri indir
+        run: |
+          set -euo pipefail
+          mkdir -p source outputs
+          curl --fail --location --retry 3 --silent --show-error "https://raw.githubusercontent.com/chickensoft-games/Chicken/main/chickensoft_mascot_model.blend" --output source/chickensoft_mascot_model.blend
+          test "$(stat -c%s source/chickensoft_mascot_model.blend)" -gt 100000
+      - name: Gercek karakter iskeleti ve animasyonlarini incele
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a blender -b source/chickensoft_mascot_model.blend -t 2 --python 3d-studio/rig-lab/inspect.py
+          cp /tmp/model_info.json outputs/model_info.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minik-kasifler-rig-model-report
+          path: outputs/model_info.json
+          retention-days: 7
+          if-no-files-found: error
