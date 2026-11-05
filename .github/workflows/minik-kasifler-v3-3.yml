@@ -94,3 +94,41 @@ jobs:
            if duration<0.2: raise RuntimeError("Bos ses dosyasi: "+filename)
            result.append({"who":who,"text":spoken,"heading":title,"emoji":emoji,"color":color,"audio":f"ses{i}.wav","frames":math.ceil(max(4,duration+1.5)*30)})
           Path("public/scenes.json").write_text(json.dumps(result,ensure_ascii=False),encoding="utf-8")
+          print("Hazir sahneler:",len(result),flush=True)
+          PY_END
+          cat > video.jsx <<'JS_END'
+          import React from 'react';
+          import {Composition,registerRoot,AbsoluteFill,Audio,Sequence,staticFile,useCurrentFrame,interpolate} from 'remotion';
+          import scenes from './public/scenes.json';
+          const total=scenes.reduce((sum,s)=>sum+s.frames,0);
+          const Scene=({s})=>{const f=useCurrentFrame();const scale=interpolate(f,[0,12],[0.85,1],{extrapolateRight:'clamp'});return <AbsoluteFill style={{background:`linear-gradient(155deg,${s.color},#22224c)`,alignItems:'center',justifyContent:'center',padding:40,color:'#fff',fontFamily:'Arial,sans-serif',textAlign:'center'}}><div style={{position:'absolute',top:75,fontSize:30,fontWeight:700}}>MİNİK KAŞİFLER</div><div style={{fontSize:150}}>{s.who==='tavsan'?'🐰':'🐥'}</div><div style={{fontSize:115}}>{s.emoji}</div><div style={{fontSize:58,fontWeight:800,transform:`scale(${scale})`}}>{s.heading}</div><div style={{position:'absolute',bottom:100,left:30,right:30,background:'#fff',color:'#25254b',borderRadius:26,padding:20,fontSize:31}}>{s.text}</div><Audio src={staticFile(s.audio)}/></AbsoluteFill>};
+          const Video=()=>{let start=0;return <AbsoluteFill>{scenes.map((s,i)=>{let from=start;start+=s.frames;return <Sequence key={i} from={from} durationInFrames={s.frames}><Scene s={s}/></Sequence>})}</AbsoluteFill>};
+          registerRoot(()=> <Composition id="MinikKasifler" component={Video} durationInFrames={total} fps={30} width={720} height={1280}/>);
+          JS_END
+      - name: Sesleri olustur
+        run: |
+          set -euo pipefail
+          python tts.py
+          test -s public/scenes.json
+          test -s public/ses0.wav
+      - name: Remotion kur
+        run: |
+          npm init -y
+          npm install --no-audit --no-fund remotion @remotion/cli react react-dom
+      - name: MP4 olustur
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx remotion render video.jsx MinikKasifler "outputs/${BOLUM}-${SES_TESTI}-${MOD}.mp4" --codec=h264 --concurrency=2
+          test -s "outputs/${BOLUM}-${SES_TESTI}-${MOD}.mp4"
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1 "outputs/${BOLUM}-${SES_TESTI}-${MOD}.mp4" | grep -q h264
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of default=noprint_wrappers=1 "outputs/${BOLUM}-${SES_TESTI}-${MOD}.mp4" | grep -q audio
+      - name: MP4 ve WAV indirilebilir yap
+        uses: actions/upload-artifact@v6
+        with:
+          name: minik-kasifler-v33-${{ inputs.bolum }}-${{ inputs.ses_testi }}-${{ inputs.mod }}
+          path: |
+            outputs/*.mp4
+            public/ses*.wav
+          if-no-files-found: error
+          retention-days: 7
