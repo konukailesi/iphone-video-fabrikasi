@@ -9,7 +9,7 @@ assert walk is not None, 'walk animasyonu bulunamadi'
 for ob in list(bpy.data.objects):
     if ob.name.startswith('WGT-') or ob.name=='metarig':
         ob.hide_render=True
-        ob.hide_set(True)
+        # hide_render works for objects in excluded collections; hide_set requires view layer membership
 # Rig'i NLA ile tekrar et; adim animasyonu + gercek konum degisimi
 if rig.animation_data is None: rig.animation_data_create()
 rig.animation_data.action=None
