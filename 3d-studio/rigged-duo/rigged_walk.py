@@ -148,12 +148,12 @@ def animate(rig,phaseoffset=0,speed=.014):
     e=rig.pose.bones['ear.'+side];e.rotation_mode='XYZ'
     e.rotation_euler=(.08*math.sin(cycle*2+(.5 if side=='L' else 0)),0,0)
     e.keyframe_insert('rotation_euler',frame=f)
-animate(rab,.5,.010)
-animate(chi,2.2,.008)
+animate(rab,.5,.0025)
+animate(chi,2.2,.0025)
 # Camera
 bpy.ops.object.camera_add(location=(0,-11.5,3.4));cam=bpy.context.object
 cam.rotation_euler=(Vector((0,0,1.48))-cam.location).to_track_quat('-Z','Y').to_euler()
-cam.data.type='ORTHO';cam.data.ortho_scale=4.8;sc.camera=cam
+cam.data.type='ORTHO';cam.data.ortho_scale=6.8;sc.camera=cam
 os.makedirs('/tmp/rigged_duo_frames',exist_ok=True)
 sc.render.filepath='/tmp/rigged_duo_frames/frame_'
 print('RIGS',rab.name,chi.name,'BONES',len(rab.data.bones),len(chi.data.bones),flush=True)
