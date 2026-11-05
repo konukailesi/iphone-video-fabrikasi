@@ -1,0 +1,33 @@
+name: Minik Kasifler - Tam Iskeletli Ikili Yuruyus
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/minik-kasifler-rigged-duo.yml'
+      - '3d-studio/rigged-duo/**'
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Blender ve FFmpeg kur
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y blender ffmpeg libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb
+      - name: Iki armature rig ile yuruyus render
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a blender -b -t 2 --python 3d-studio/rigged-duo/rigged_walk.py
+          test -s /tmp/rigged_duo_frames/frame_0001.png
+          ffmpeg -hide_banner -loglevel error -y -framerate 24 -start_number 1 -i /tmp/rigged_duo_frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 22 -movflags +faststart outputs/Minik_Kasifler_Tam_Rig_3D_Yuruyus.mp4
+          test -s outputs/Minik_Kasifler_Tam_Rig_3D_Yuruyus.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minik-kasifler-tam-rig-yuruyus
+          path: outputs/*.mp4
+          if-no-files-found: error
+          retention-days: 7
