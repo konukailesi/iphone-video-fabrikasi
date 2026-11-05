@@ -35,6 +35,8 @@ def mesh_ball(name,pos,size,mat,bone=None,rig=None):
  for poly in ob.data.polygons:poly.use_smooth=True
  if bone:
   vg=ob.vertex_groups.new(name=bone);vg.add(list(range(len(ob.data.vertices))),1.0,'REPLACE')
+  ob.parent=rig
+  ob.matrix_parent_inverse=rig.matrix_world.inverted()
   mod=ob.modifiers.new('Real armature deform','ARMATURE');mod.object=rig
  return ob
 
