@@ -1,263 +1,117 @@
-
-name: Minik Kasifler V3.2 - Bolum ve Ses Secimi
-
-on:
-  workflow_dispatch:
-    inputs:
-      bolum:
-        description: 'Video konusu'
-        required: true
-        type: choice
-        default: renkler
-        options:
-          - renkler
-          - sayilar
-          - hayvanlar
-          - sekiller
-          - paylasma
-      ses:
-        description: 'ElevenLabs sesi'
-        required: true
-        type: choice
-        default: kadin
-        options:
-          - kadin
-          - erkek
-          - sevimli
-
-permissions:
-  contents: read
-
-jobs:
-  render:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    env:
-      BOLUM: ${{ inputs.bolum }}
-      SES: ${{ inputs.ses }}
-      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-      VOICE_KADIN: ${{ secrets.ELEVENLABS_VOICE_ID }}
-      VOICE_ERKEK: ${{ secrets.ELEVENLABS_VOICE_ERKEK }}
-      VOICE_SEVIMLI: ${{ secrets.ELEVENLABS_VOICE_SEVIMLI }}
-
-    steps:
+          if TEST=='C':
+              for who in ('tavsan','civciv'):
+                  if not Path(f'voice_refs/{who}.wav').is_file():
+                      raise FileNotFoundError(f'C sesi icin voice_refs/{who}.wav gerekli. Referans sahibi izin vermis olmali.')
+          
+          print('Pocket TTS Turkish model yukleniyor...',flush=True)
+          model=TurkishTTS.from_pretrained(device='cpu')
+          refvoices={}
+          if TEST=='C':
+              for who in ('tavsan','civciv'):
+                  refvoices[who]=model.voice_from_file(f'voice_refs/{who}.wav')
+          
+          out=Path('public');out.mkdir(exist_ok=True)
+          Path('outputs').mkdir(exist_ok=True)
+          
+          # Ses testi de her iki karakteri seslendirir, boylece iki ayrik kayit dinlenir.
+          if MODE=='ses_testi':
+              scenes=[
+                  ('tavsan','Merhaba minik arkadaşım! Kayıp balonları birlikte bulalım!','mutlu','MAVİ TAVŞAN','🐰','#845EC2'),
+                  ('civciv','Aaa! Kırmızı balon burada! Yaşasın, başardık!','şaşkın','SARI CİVCİV','🐥','#F5B700')]
+          else:
+              scenes=LESSONS[BOLUM]
+          
+          metadata=[]
+          for i,(who,text,emotion,heading,emoji,color) in enumerate(scenes):
+              voice=refvoices[who] if TEST=='C' else VOICES[TEST][who]
+              print(f'Ses {i+1}/{len(scenes)}: {who}, {emotion}',flush=True)
+              audio=model.generate(text,voice=voice,emotion=emotion,seed=42+i)
+              path=out/f'ses{i}.wav'
+              save_wav(str(path),audio,model.sample_rate)
+              with wave.open(str(path),'rb') as w:
+                  dur=w.getnframes()/w.getframerate()
+              if dur<0.25:raise ValueError(f'Ses bos: {path}')
+              # Her sahnede tam ses bitmeden gorsel degismesin; cevabi dusunmek icin alan.
+              sec=max(4.0,dur+1.25)
+              metadata.append(dict(who=who,text=text,heading=heading,emoji=emoji,color=color,
+                                   audio=f'ses{i}.wav',frames=math.ceil(sec*30),seconds=round(dur,2)))
+          
+          Path('public/scenes.json').write_text(json.dumps({'mode':MODE,'test':TEST,'bolum':BOLUM,'scenes':metadata},ensure_ascii=False,indent=2),encoding='utf-8')
+          print('Ses sayisi:',len(metadata),'toplam saniye:',round(sum(x['frames'] for x in metadata)/30,1),flush=True)
+          POCKET_TTS_PY_END
+          cat > video.jsx <<'REMOTION_VIDEO_JSX_END'
+          import React from 'react';
+          import {Composition, registerRoot, AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame, interpolate} from 'remotion';
+          import scenesData from './public/scenes.json';
+          
+          const fps=30;
+          const sequences=scenesData.scenes;
+          const total=sequences.reduce((sum,s)=>sum+s.frames,0);
+          const Character=({who,frame})=>{
+            const bounce=Math.sin(frame/10)*8;
+            const happy=who==='tavsan';
+            return <div style={{fontSize:150,transform:`translateY(${bounce}px)`,filter:'drop-shadow(0 12px 16px #0003)'}}>{happy?'🐰':'🐥'}</div>;
+          };
+          const Scene=({scene})=>{
+            const frame=useCurrentFrame();
+            const pop=interpolate(frame,[0,12,scene.frames-15,scene.frames-1],[0.7,1,1,0.94],{extrapolateLeft:'clamp',extrapolateRight:'clamp'});
+            return <AbsoluteFill style={{background:`linear-gradient(160deg, ${scene.color}, #28315f)`,justifyContent:'center',alignItems:'center',fontFamily:'Arial, sans-serif',color:'white',textAlign:'center',padding:42}}>
+              <div style={{position:'absolute',top:65,fontSize:32,fontWeight:800,letterSpacing:2}}>MİNİK KAŞİFLER</div>
+              <Character who={scene.who} frame={frame}/>
+              <div style={{fontSize:100,margin:30}}>{scene.emoji}</div>
+              <div style={{fontSize:58,fontWeight:900,lineHeight:1.2,transform:`scale(${pop})`,textShadow:'0px 4px 9px #0006'}}>{scene.heading}</div>
+              <div style={{position:'absolute',bottom:125,left:35,right:35,borderRadius:28,padding:'24px 15px',background:'#ffffffdd',color:'#29244d',fontSize:32,fontWeight:700,lineHeight:1.3}}>{scene.text}</div>
+              <Audio src={staticFile(scene.audio)} />
+            </AbsoluteFill>;
+          };
+          const Video=()=>{
+            let start=0;
+            return <AbsoluteFill>{sequences.map((scene,i)=>{const from=start;start+=scene.frames;return <Sequence key={i} from={from} durationInFrames={scene.frames}><Scene scene={scene}/></Sequence>})}</AbsoluteFill>;
+          };
+          const Root=()=> <Composition id="MinikKasifler" component={Video} durationInFrames={total} fps={fps} width={720} height={1280}/>;
+          registerRoot(Root);
+          REMOTION_VIDEO_JSX_END
+      - name: Python 3.11 kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Node.js 24 kur
         uses: actions/setup-node@v6
         with:
           node-version: '24'
-
-      - name: FFmpeg ve Turkce font kur
+      - name: FFmpeg kur
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg fonts-noto-color-emoji fonts-dejavu-core
-          ffmpeg -version | head -n 1
-
+          sudo apt-get install -y ffmpeg
+      - name: CPU ses modelini kur
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install pocket-tts-turkish
+      - name: Turkce sesleri olustur
+        run: |
+          set -euo pipefail
+          python tts_v33.py
+          test -s public/scenes.json
+          test -s public/ses0.wav
       - name: Remotion paketlerini kur
         run: |
           npm init -y
           npm install --no-audit --no-fund remotion @remotion/cli react react-dom
-
-      - name: Video kodunu olustur
-        shell: bash
+      - name: MP4 render
         run: |
           set -euo pipefail
-          mkdir -p src public outputs
-          cat > src/index.jsx <<'REMOTION_JSX_END'
-          import React from 'react';
-          import {registerRoot, Composition, AbsoluteFill, Sequence, Audio, staticFile, useCurrentFrame, spring, useVideoConfig} from 'remotion';
-
-          const lessons = {
-            renkler: {
-              title: 'Kayıp Balonlar',
-              scenes: [
-                ['🎈','Balonları bulalım!','#7c3aed'],
-                ['🔴','KIRMIZI','#ef4444'],
-                ['🔵','MAVİ','#2563eb'],
-                ['🟡','SARI','#eab308'],
-                ['🎈','Kırmızı • Mavi • Sarı','#14b8a6'],
-              ],
-            },
-            sayilar: {
-              title: 'Sayı Treni',
-              scenes: [
-                ['🚂','Haydi sayalım!','#7c3aed'],
-                ['⭐','1 yıldız','#ec4899'],
-                ['⭐⭐','2 yıldız','#2563eb'],
-                ['⭐⭐⭐','3 yıldız','#f59e0b'],
-                ['🌟','1 • 2 • 3','#14b8a6'],
-              ],
-            },
-            hayvanlar: {
-              title: 'Hayvan Dostlar',
-              scenes: [
-                ['🐾','Kimler burada?','#7c3aed'],
-                ['🐱','KEDİ','#ec4899'],
-                ['🐶','KÖPEK','#2563eb'],
-                ['🐥','CİVCİV','#f59e0b'],
-                ['🐱🐶🐥','Hayvan dostlarımız!','#14b8a6'],
-              ],
-            },
-            sekiller: {
-              title: 'Şekil Robotu',
-              scenes: [
-                ['🤖','Şekilleri bulalım!','#7c3aed'],
-                ['🟠','DAİRE','#ec4899'],
-                ['🟦','KARE','#2563eb'],
-                ['🔺','ÜÇGEN','#f59e0b'],
-                ['🤖','Daire • Kare • Üçgen','#14b8a6'],
-              ],
-            },
-            paylasma: {
-              title: 'Paylaşma Günü',
-              scenes: [
-                ['🐰','Bir oyuncak bulduk!','#7c3aed'],
-                ['🧸','Oyuncağı seviyoruz.','#ec4899'],
-                ['🐥','Arkadaşımız geldi!','#2563eb'],
-                ['🤝','Sırayla oynayalım.','#f59e0b'],
-                ['💛','Paylaşmak güzel!','#14b8a6'],
-              ],
-            },
-          };
-
-          const Scene = ({info, lessonTitle}) => {
-            const frame = useCurrentFrame();
-            const {fps} = useVideoConfig();
-            const scale = spring({frame, fps, config:{damping:14, stiffness:90}});
-            const bob = Math.sin(frame / 13) * 10;
-            const [emoji, label, color] = info;
-            return (
-              <AbsoluteFill style={{background:`linear-gradient(155deg, ${color}, #231c51)`, padding:48, alignItems:'center', justifyContent:'center', color:'#fff', fontFamily:'DejaVu Sans, Arial, sans-serif', textAlign:'center'}}>
-                <div style={{position:'absolute',top:90,fontSize:34,fontWeight:700,opacity:0.9}}>{lessonTitle}</div>
-                <div style={{fontSize:175,transform:`translateY(${bob}px) scale(${Math.max(0.1,scale)})`,lineHeight:1.4}}>{emoji}</div>
-                <div style={{fontSize:58,fontWeight:800,marginTop:45,lineHeight:1.3,textShadow:'0 3px 12px #0005'}}>{label}</div>
-                <div style={{position:'absolute',bottom:85,fontSize:28,fontWeight:700,letterSpacing:2}}>MİNİK KAŞİFLER ✨</div>
-              </AbsoluteFill>
-            );
-          };
-
-          const Lesson = ({bolum}) => {
-            const lesson = lessons[bolum] || lessons.renkler;
-            return (
-              <AbsoluteFill>
-                {lesson.scenes.map((info, i) => (
-                  <Sequence key={i} from={i * 240} durationInFrames={240}>
-                    <Scene info={info} lessonTitle={lesson.title}/>
-                    <Audio src={staticFile(`ses${i}.mp3`)}/>
-                  </Sequence>
-                ))}
-              </AbsoluteFill>
-            );
-          };
-
-          const Root = () => <Composition id="MinikDers" component={Lesson} durationInFrames={1200} fps={30} width={720} height={1280} defaultProps={{bolum:'renkler'}}/>;
-          registerRoot(Root);
-          REMOTION_JSX_END
-
-      - name: Secilen dogal Turkce sesi olustur
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYTHON_VOICE_END'
-          import json, os, urllib.request, urllib.error, subprocess
-
-          lines = {
-            'renkler': [
-              'Merhaba minik kaşif! Kayıp balonları birlikte bulalım!',
-              'Bak, kırmızı bir balon! Kırmızıyı gösterebilir misin?',
-              'Şimdi mavi balonu bulduk! Harika!',
-              'İşte sarı balon! Haydi, sarı diyelim!',
-              'Üç renk öğrendik: kırmızı, mavi, sarı. Aferin sana!'
-            ],
-            'sayilar': [
-              'Sayı treni geliyor! Haydi birlikte sayalım!',
-              'Bir yıldız! Bir!',
-              'İki yıldız! Bir, iki!',
-              'Üç yıldız! Bir, iki, üç!',
-              'Harika saydın! Bir, iki, üç!'
-            ],
-            'hayvanlar': [
-              'Hayvan dostlarımız saklanmış! Onları bulalım!',
-              'Bu bir kedi. Miyav miyav!',
-              'Bu bir köpek. Hav hav!',
-              'Bu minik bir civciv. Cik cik!',
-              'Kedi, köpek, civciv! Hepimiz arkadaşız!'
-            ],
-            'sekiller': [
-              'Şekil robotumuza yardım edelim! Hazır mısın?',
-              'Bu bir daire! Yuvarlak bir daire!',
-              'Bu bir kare! Dört köşesi var!',
-              'Bu bir üçgen! Üç köşesi var!',
-              'Daire, kare, üçgen! Robotumuz tamamlandı!'
-            ],
-            'paylasma': [
-              'Merhaba! Bugün paylaşmayı öğreniyoruz.',
-              'Tavşanımız çok güzel bir oyuncak buldu.',
-              'Civciv de bizimle oynamak istiyor.',
-              'Haydi sırayla oynayalım! Önce sen, sonra ben.',
-              'Paylaşmak ve arkadaş olmak çok güzel!'
-            ],
-          }
-          voices = {
-            'kadin': os.getenv('VOICE_KADIN',''),
-            'erkek': os.getenv('VOICE_ERKEK',''),
-            'sevimli': os.getenv('VOICE_SEVIMLI',''),
-          }
-          lesson = os.environ['BOLUM']
-          voice_choice = os.environ['SES']
-          api_key = os.getenv('ELEVENLABS_API_KEY','').strip()
-          voice_id = voices[voice_choice].strip()
-          if not api_key:
-            raise SystemExit('HATA: ELEVENLABS_API_KEY secret eksik.')
-          if not voice_id:
-            raise SystemExit(f'HATA: {voice_choice} sesi icin Voice ID secret eksik.')
-
-          for i, text in enumerate(lines[lesson]):
-            url = f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128'
-            payload = json.dumps({
-              'text':text,
-              'model_id':'eleven_multilingual_v2',
-              'voice_settings':{'stability':0.45,'similarity_boost':0.75,'style':0.2}
-            }).encode('utf-8')
-            req = urllib.request.Request(url, data=payload, method='POST', headers={
-              'xi-api-key':api_key,
-              'Content-Type':'application/json',
-              'Accept':'audio/mpeg'
-            })
-            try:
-              with urllib.request.urlopen(req, timeout=120) as result:
-                audio = result.read()
-            except urllib.error.HTTPError as error:
-              print(f'ElevenLabs HTTP {error.code}: {error.read(500).decode("utf-8", "replace")}')
-              raise
-            if len(audio) < 1500:
-              raise SystemExit(f'HATA: ses{i}.mp3 olusturulamadi.')
-            filename = f'public/ses{i}.mp3'
-            with open(filename,'wb') as f:
-              f.write(audio)
-            duration = float(subprocess.check_output([
-              'ffprobe','-v','error','-show_entries','format=duration',
-              '-of','default=noprint_wrappers=1:nokey=1',filename
-            ]).decode().strip())
-            print(f'Sahne {i+1}: ses suresi {duration:.1f} saniye')
-            if duration > 7.9:
-              raise SystemExit(f'HATA: {filename} 8 saniyeyi asiyor. Metni kisaltin.')
-
-          with open('props.json','w',encoding='utf-8') as f:
-            json.dump({'bolum':lesson},f)
-          PYTHON_VOICE_END
-
-      - name: MP4 olustur
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx remotion render src/index.jsx MinikDers "outputs/${BOLUM}-${SES}.mp4" --props=props.json --codec=h264 --concurrency=2
-          test -s "outputs/${BOLUM}-${SES}.mp4"
-          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 "outputs/${BOLUM}-${SES}.mp4"
-
-      - name: MP4 dosyasini indirilebilir yap
+          npx remotion render video.jsx MinikKasifler "outputs/minik-kasifler-${BOLUM}-${MOD}-${SES_TESTI}.mp4" --codec=h264 --concurrency=2
+          test -s "outputs/minik-kasifler-${BOLUM}-${MOD}-${SES_TESTI}.mp4"
+          ffprobe -v error -show_entries stream=codec_name -of csv=p=0 "outputs/minik-kasifler-${BOLUM}-${MOD}-${SES_TESTI}.mp4" | grep -q h264
+          ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "outputs/minik-kasifler-${BOLUM}-${MOD}-${SES_TESTI}.mp4" | grep -q audio
+      - name: Indirilebilir MP4 ve sesleri yukle
         uses: actions/upload-artifact@v6
         with:
-          name: minik-kasifler-v3-2-${{ inputs.bolum }}-${{ inputs.ses }}
-          path: outputs/*.mp4
+          name: minik-kasifler-v33-${{ inputs.mod }}-${{ inputs.ses_testi }}
+          path: |
+            outputs/*.mp4
+            public/ses*.wav
+            public/scenes.json
           if-no-files-found: error
           retention-days: 7
