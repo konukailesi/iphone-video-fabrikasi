@@ -136,7 +136,7 @@ jobs:
             'coskulu':'mutlu',
             'sakin':'sakin',
             'merakli':'sakin',
-            'sasirma':'sasirma',
+            'sasirma':'şaşkın',
           }
 
           print('Pocket TTS modeli yukleniyor...', flush=True)
