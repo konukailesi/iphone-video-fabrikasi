@@ -1,96 +1,96 @@
-name: Minik Kasifler V3.3 - Pocket TTS
+name: Minik Kasifler V3.3 - Tam Video ve Ses
 
 on:
   workflow_dispatch:
     inputs:
       bolum:
-        description: "Egitici bolum"
-        required: true
+        description: 'Video bolumu'
         type: choice
+        required: true
         default: renkler
         options: [renkler, sayilar, hayvanlar, sekiller, paylasma]
       ses_testi:
-        description: "Ses kombinasyonu"
-        required: true
+        description: 'Ses secimi'
         type: choice
+        required: true
         default: A
         options: [A, B, C]
       mod:
-        description: "Yalnizca iki ses dene veya tam video uret"
-        required: true
+        description: 'Ses testi veya MP4 video'
         type: choice
-        default: ses_testi
-        options: [ses_testi, video]
+        required: true
+        default: video
+        options: [video, ses_testi]
+
 permissions:
   contents: read
+
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     env:
       BOLUM: ${{ inputs.bolum }}
       SES_TESTI: ${{ inputs.ses_testi }}
       MOD: ${{ inputs.mod }}
-      HF_HUB_DISABLE_TELEMETRY: '1'
       OMP_NUM_THREADS: '2'
       MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_TELEMETRY: '1'
     steps:
-      - name: Dosyalari al
-        uses: actions/checkout@v4
-      - name: Proje kodunu olustur
+      - uses: actions/checkout@v4
+      - name: Python ve Node kur
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: FFmpeg kur
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Pocket TTS kur
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install pocket-tts-turkish
+      - name: Proje dosyalarini olustur
         shell: bash
         run: |
-          mkdir -p public outputs voice_refs
-          cat > tts_v33.py <<'POCKET_TTS_PY_END'
-          import json, os, math, wave, subprocess
+          mkdir -p public outputs
+          cat > tts.py <<'PY_END'
+          import os,json,math,wave
           from pathlib import Path
-          from pocket_tts_turkish import TurkishTTS, save_wav
-          
-          MODE=os.environ.get('MOD','ses_testi')
-          TEST=os.environ.get('SES_TESTI','A')
-          BOLUM=os.environ.get('BOLUM','renkler')
-          if MODE not in ('ses_testi','video'): raise ValueError('Gecersiz mod')
-          if TEST not in ('A','B','C'): raise ValueError('Gecersiz ses testi')
-          
-          # Bilerek kisa, yas grubuna uygun diyaloglar.
-          LESSONS={
-           'renkler':[
-            ('tavsan','Merhaba! Kayıp balonlarımızı bulalım.','şaşkın','Balonlarımızı bulalım!','🎈','#845EC2'),
-            ('civciv','Bak! Kırmızı bir balon!','mutlu','KIRMIZI','🔴','#F65B67'),
-            ('tavsan','Peki mavi balon nerede?','şaşkın','MAVİ NEREDE?','🔵','#447ADB'),
-            ('civciv','İşte burada! Mavi balon!','mutlu','MAVİ','🔵','#447ADB'),
-            ('tavsan','Sarı balonu da bulduk! Bir, iki, üç!','mutlu','ÜÇ BALON','🟡','#F5B700'),
-            ('civciv','Kırmızı, mavi, sarı! Harikasın!','mutlu','HARİKASIN!','🎉','#4AB39B')],
-           'sayilar':[
-            ('tavsan','Sayı treni geliyor! Birlikte sayalım.','mutlu','SAYI TRENİ','🚂','#845EC2'),
-            ('civciv','Bir tane yıldız!','sakin','BİR','⭐','#F65B67'),
-            ('tavsan','İki tane yıldız! Bir, iki!','mutlu','İKİ','⭐⭐','#447ADB'),
-            ('civciv','Üç tane yıldız! Bir, iki, üç!','mutlu','ÜÇ','⭐⭐⭐','#F5B700'),
-            ('tavsan','Dört yıldızımız oldu!','şaşkın','DÖRT','🌟','#845EC2'),
-            ('civciv','Bir, iki, üç, dört! Aferin!','mutlu','TEBRİKLER!','🎉','#4AB39B')],
-           'hayvanlar':[
-            ('tavsan','Ormanda arkadaşlarımızı bulalım!','şaşkın','HAYVAN DOSTLAR','🌳','#845EC2'),
-            ('civciv','Kim miyav diyor? Kedi!','mutlu','KEDİ','🐱','#F65B67'),
-            ('tavsan','Kim hav hav diyor? Köpek!','mutlu','KÖPEK','🐶','#447ADB'),
-            ('civciv','Cik cik! Ben bir civcivim!','mutlu','CİVCİV','🐥','#F5B700'),
-            ('tavsan','Suda kim yüzüyor? Balık!','şaşkın','BALIK','🐟','#845EC2'),
-            ('civciv','Kedi, köpek, civciv ve balık!','mutlu','DOSTLARIMIZ','💛','#4AB39B')],
-           'sekiller':[
-            ('tavsan','Şekil robotumuzu yapalım!','mutlu','ŞEKİL ROBOTU','🤖','#845EC2'),
-            ('civciv','Yuvarlak şekil, daire!','sakin','DAİRE','🟠','#F65B67'),
-            ('tavsan','Dört eşit kenar, kare!','sakin','KARE','🟦','#447ADB'),
-            ('civciv','Üç köşe! Üçgen!','mutlu','ÜÇGEN','🔺','#F5B700'),
-            ('tavsan','Robotumuzun kafası hangi şekil?','şaşkın','HANGİ ŞEKİL?','🤖','#845EC2'),
-            ('civciv','Kare! Robotumuz tamamlandı!','mutlu','BAŞARDIK!','🎉','#4AB39B')],
-           'paylasma':[
-            ('tavsan','Bir oyuncak buldum!','şaşkın','OYUNCAĞIMIZ','🧸','#845EC2'),
-            ('civciv','Ben de oynamak istiyorum.','sakin','OYUN ZAMANI','🐥','#F65B67'),
-            ('tavsan','Önce ben, sonra sen oynayabiliriz.','sakin','SIRAYLA','🤝','#447ADB'),
-            ('civciv','Teşekkür ederim! Şimdi benim sıram.','mutlu','TEŞEKKÜRLER','💛','#F5B700'),
-            ('tavsan','Birlikte oynamak çok eğlenceli!','mutlu','BİRLİKTE','🧸','#845EC2'),
-            ('civciv','Paylaşmak çok güzel!','mutlu','ARKADAŞLIK','🎉','#4AB39B')]
+          from pocket_tts_turkish import TurkishTTS,save_wav
+          mode=os.getenv("MOD","ses_testi")
+          test=os.getenv("SES_TESTI","A")
+          lesson=os.getenv("BOLUM","renkler")
+          texts={
+          "renkler":[("tavsan","Merhaba! Balonları bulalım!","mutlu","Balon avı","🎈","#7c3aed"),("civciv","Bak! Kırmızı balon!","şaşkın","Kırmızı","🔴","#e5484d"),("tavsan","Mavi balon nerede?","şaşkın","Mavi nerede?","🔵","#3478d4"),("civciv","İşte mavi balon!","mutlu","Mavi","🔵","#3478d4"),("tavsan","Sarı balon da burada!","mutlu","Sarı","🟡","#e6ae23"),("civciv","Bir, iki, üç balon! Harikasın!","mutlu","Üç balon","🎉","#26a88c")],
+          "sayilar":[("tavsan","Sayı trenimiz geliyor!","mutlu","Sayı treni","🚂","#7c3aed"),("civciv","Bir yıldız!","sakin","Bir","⭐","#e5484d"),("tavsan","İki yıldız!","mutlu","İki","⭐⭐","#3478d4"),("civciv","Üç yıldız!","mutlu","Üç","⭐⭐⭐","#e6ae23"),("tavsan","Haydi birlikte sayalım!","şaşkın","Sayalım","🌟","#7c3aed"),("civciv","Bir, iki, üç! Bravo!","mutlu","Bravo","🎉","#26a88c")],
+          "hayvanlar":[("tavsan","Hayvan dostlarımızı bulalım!","mutlu","Hayvanlar","🐾","#7c3aed"),("civciv","Miyav diyen kim? Kedi!","şaşkın","Kedi","🐱","#e5484d"),("tavsan","Hav hav diyen kim? Köpek!","mutlu","Köpek","🐶","#3478d4"),("civciv","Cik cik! Civciv!","mutlu","Civciv","🐥","#e6ae23"),("tavsan","Suda kim yüzüyor? Balık!","şaşkın","Balık","🐟","#7c3aed"),("civciv","Hepsi bizim arkadaşımız!","mutlu","Arkadaşlar","💛","#26a88c")],
+          "sekiller":[("tavsan","Şekilleri bulalım!","mutlu","Şekiller","🔷","#7c3aed"),("civciv","Yuvarlak daire!","sakin","Daire","🟠","#e5484d"),("tavsan","Bu bir kare!","mutlu","Kare","🟦","#3478d4"),("civciv","Üç köşeli üçgen!","mutlu","Üçgen","🔺","#e6ae23"),("tavsan","Şekilleri tanıdın mı?","şaşkın","Hatırla","❓","#7c3aed"),("civciv","Daire, kare, üçgen!","mutlu","Harika","🎉","#26a88c")],
+          "paylasma":[("tavsan","Yeni bir oyuncak buldum!","şaşkın","Oyuncak","🧸","#7c3aed"),("civciv","Ben de oynayabilir miyim?","sakin","Arkadaşlık","🐥","#e5484d"),("tavsan","Elbette! Sırayla oynayalım.","mutlu","Sırayla","🤝","#3478d4"),("civciv","Teşekkür ederim!","mutlu","Teşekkürler","💛","#e6ae23"),("tavsan","Birlikte oynamak güzel!","mutlu","Birlikte","🐰","#7c3aed"),("civciv","Paylaşmayı öğrendik!","mutlu","Bravo","🎉","#26a88c")]
           }
-          
-          VOICES={'A':{'tavsan':'female_1','civciv':'female_2'},
-                  'B':{'tavsan':'female_2','civciv':'female_3'}}
-          
+          if mode not in ("ses_testi","video") or test not in ("A","B","C") or lesson not in texts: raise SystemExit("Gecersiz secim")
+          scenes=([("tavsan","Merhaba minik arkadaşım! Ben Mavi Tavşan!","mutlu","Mavi Tavşan","🐰","#7c3aed"),("civciv","Yaşasın! Ben Sarı Civciv!","şaşkın","Sarı Civciv","🐥","#e6ae23")] if mode=="ses_testi" else texts[lesson])
+          voices={"A":{"tavsan":"female_1","civciv":"female_2"},"B":{"tavsan":"female_2","civciv":"female_3"}}
+          if test=="C":
+           for who in ("tavsan","civciv"):
+            if not Path("voice_refs/"+who+".wav").is_file(): raise SystemExit("C icin voice_refs/"+who+".wav eksik. Herkese acik depoya ozel kayit yuklemeyin.")
+          print("Pocket TTS modeli yukleniyor",flush=True)
+          model=TurkishTTS.from_pretrained(device="cpu")
+          reference={who:model.voice_from_file("voice_refs/"+who+".wav") for who in ("tavsan","civciv")} if test=="C" else {}
+          Path("public").mkdir(exist_ok=True)
+          Path("outputs").mkdir(exist_ok=True)
+          result=[]
+          for i,(who,spoken,emotion,title,emoji,color) in enumerate(scenes):
+           voice=reference[who] if test=="C" else voices[test][who]
+           print("Konusma",i+1,"/",len(scenes),who,flush=True)
+           audio=model.generate(spoken,voice=voice,emotion=emotion,seed=42+i)
+           filename=f"public/ses{i}.wav"
+           save_wav(filename,audio,model.sample_rate)
+           with wave.open(filename,"rb") as f: duration=f.getnframes()/f.getframerate()
+           if duration<0.2: raise RuntimeError("Bos ses dosyasi: "+filename)
+           result.append({"who":who,"text":spoken,"heading":title,"emoji":emoji,"color":color,"audio":f"ses{i}.wav","frames":math.ceil(max(4,duration+1.5)*30)})
+          Path("public/scenes.json").write_text(json.dumps(result,ensure_ascii=False),encoding="utf-8")
