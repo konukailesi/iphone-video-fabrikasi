@@ -16,7 +16,7 @@ jobs:
       - name: Blender ve grafik kutuphaneleri
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y blender libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb curl git-lfs
+          sudo apt-get install -y blender ffmpeg libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb curl git-lfs
       - name: Animasyonlu acik lisansli karakteri indir
         run: |
           set -euo pipefail
@@ -29,9 +29,16 @@ jobs:
         run: |
           LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a blender -b source/chickensoft_mascot_model.blend -t 2 --python 3d-studio/rig-lab/inspect.py
           cp /tmp/model_info.json outputs/model_info.json
+      - name: Iskelet animasyonlu 5 saniyelik MP4 olustur
+        run: |
+          set -euo pipefail
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a blender -b source/chickensoft_mascot_model.blend -t 2 --python 3d-studio/rig-lab/walk_render.py
+          test -s /tmp/rigframes/frame_0001.png
+          ffmpeg -hide_banner -loglevel error -y -framerate 24 -start_number 1 -i /tmp/rigframes/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 21 -movflags +faststart outputs/gercek_iskeletli_yuruyus_5sn.mp4
+          test -s outputs/gercek_iskeletli_yuruyus_5sn.mp4
       - uses: actions/upload-artifact@v4
         with:
-          name: minik-kasifler-rig-model-report
-          path: outputs/model_info.json
+          name: minik-kasifler-rig-walk-preview
+          path: outputs/*
           retention-days: 7
           if-no-files-found: error
