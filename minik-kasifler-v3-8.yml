@@ -1,0 +1,278 @@
+name: Minik Kasifler V3.8 - Dikey Cizgi Film
+
+on:
+  workflow_dispatch:
+    inputs:
+      bolum:
+        description: 'Bolum'
+        type: choice
+        required: true
+        default: kayip_balonlar
+        options:
+          - kayip_balonlar
+      ses_profili:
+        description: 'Karakter sesi'
+        type: choice
+        required: true
+        default: A
+        options:
+          - A
+          - B
+      mod:
+        description: 'Test veya tam video'
+        type: choice
+        required: true
+        default: video
+        options:
+          - ses_testi
+          - video
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      BOLUM: ${{ inputs.bolum }}
+      SES_PROFILI: ${{ inputs.ses_profili }}
+      MOD: ${{ inputs.mod }}
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Node kur
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: FFmpeg kur
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core unzip
+          ffmpeg -version | head -n 1
+
+      - name: Pocket TTS kur
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install pocket-tts-turkish
+
+      - name: Remotion kur
+        run: |
+          npm init -y
+          npm install --no-audit --no-fund remotion @remotion/cli react react-dom
+
+      - name: V3.8 dosyalarini olustur
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src public/assets outputs
+          if [ -f .github/workflows/v38_assets.zip ]; then
+            unzip -oq .github/workflows/v38_assets.zip -d public/assets
+          elif [ -f v38_assets.zip ]; then
+            unzip -oq v38_assets.zip -d public/assets
+          else
+            echo 'v38_assets.zip bulunamadi. Bu dosyayi workflow ile ayni klasore yukle.' >&2
+            exit 1
+          fi
+          ls -1 public/assets | sed -n '1,20p'
+
+          cat > src/tts_v38.py <<'PYEND'
+          import json, math, os, struct, wave
+          from pathlib import Path
+          from pocket_tts_turkish import TurkishTTS, save_wav
+
+          lesson = os.getenv('BOLUM', 'kayip_balonlar')
+          profile = os.getenv('SES_PROFILI', 'A')
+          mode = os.getenv('MOD', 'video')
+
+          story = [
+            {'who':'tavsan','emotion':'mutlu','speech':'Merhaba! Ben Mavi Tavşan. Kayıp balonlarımı bulmama yardım eder misin?','title':'Minik Kaşifler','caption':'Kayıp Balonlar','image':'scene_01.jpg','mood':'intro'},
+            {'who':'tavsan','emotion':'şaşkın','speech':'Civciv! Balonlarım uçmuş! Kırmızı, mavi ve sarı balonumu bulalım!','title':'Sorun Var!','caption':'Balonlar kayboldu.','image':'scene_02.jpg','mood':'problem'},
+            {'who':'civciv','emotion':'mutlu','speech':'Bak! Kırmızı balon çalıların içinde saklanmış!','title':'Kırmızı Balon','caption':'Kırmızıyı bulduk!','image':'scene_03.jpg','mood':'found'},
+            {'who':'tavsan','emotion':'mutlu','speech':'Yaşasın! Kırmızı balon bulundu!','title':'Harika!','caption':'İlk balon tamam.','image':'scene_04.jpg','mood':'celebrate'},
+            {'who':'tavsan','emotion':'sakin','speech':'Peki mavi balon nerede? Oyuncak evin yanında olabilir mi?','title':'Mavi Balon','caption':'Hadi mavi balonu ara.','image':'scene_05.jpg','mood':'question'},
+            {'who':'civciv','emotion':'mutlu','speech':'İşte! Mavi balon buradaymış!','title':'Maviyi Bulduk','caption':'İkinci balon tamam.','image':'scene_06.jpg','mood':'found'},
+            {'who':'tavsan','emotion':'sakin','speech':'Şimdi sarı balonu bulalım. Ağacın üst tarafına bak!','title':'Sarı Balon','caption':'Sarıyı görebiliyor musun?','image':'scene_07.jpg','mood':'question'},
+            {'who':'civciv','emotion':'mutlu','speech':'İşte bulduk! Sarı balon da burada!','title':'Sarı Balon','caption':'Üçüncü balon da bulundu.','image':'scene_08.jpg','mood':'found'},
+            {'who':'tavsan','emotion':'mutlu','speech':'Aferin! Kırmızı, mavi ve sarı balonu bulduk. Bir, iki, üç! Bravo!','title':'Tekrar Edelim','caption':'Kırmızı • Mavi • Sarı','image':'scene_09.jpg','mood':'celebrate'},
+          ]
+
+          test_dialogue = [
+            {'who':'tavsan','emotion':'mutlu','speech':'Merhaba! Ben Mavi Tavşan.','title':'Ses Testi','caption':'Mavi Tavşan','image':'scene_01.jpg','mood':'intro'},
+            {'who':'civciv','emotion':'mutlu','speech':'Ben de Sarı Civciv!','title':'Ses Testi','caption':'Sarı Civciv','image':'scene_09.jpg','mood':'intro'},
+          ]
+
+          if lesson != 'kayip_balonlar':
+            raise SystemExit('V3.8 su an yalnizca kayip_balonlar bolumunu destekliyor.')
+          if profile not in ('A', 'B'):
+            raise SystemExit('Gecersiz ses profili')
+          if mode not in ('ses_testi', 'video'):
+            raise SystemExit('Gecersiz mod')
+
+          scenes = test_dialogue if mode == 'ses_testi' else story
+          voices = {
+            'A': {'tavsan': 'female_1', 'civciv': 'female_2'},
+            'B': {'tavsan': 'female_2', 'civciv': 'female_3'},
+          }
+
+          def tone(path, freq=700.0, duration=0.18, vol=0.22, sweep=False):
+            sr=44100
+            total=int(sr*duration)
+            with wave.open(path,'w') as wf:
+              wf.setnchannels(1)
+              wf.setsampwidth(2)
+              wf.setframerate(sr)
+              frames=[]
+              for i in range(total):
+                t=i/sr
+                current=freq + (220*t/duration if sweep else 0)
+                env=min(1.0, i/(sr*0.03))*min(1.0,(total-i)/(sr*0.05))
+                sample=math.sin(2*math.pi*current*t)*vol*env
+                frames.append(struct.pack('<h', int(max(-1,min(1,sample))*32767)))
+              wf.writeframes(b''.join(frames))
+
+          Path('public').mkdir(exist_ok=True)
+          tone('public/sfx_find.wav', 780, 0.16, 0.24, True)
+          tone('public/sfx_cheer.wav', 530, 0.26, 0.23, True)
+
+          print('Pocket TTS modeli yukleniyor...', flush=True)
+          model = TurkishTTS.from_pretrained(device='cpu')
+
+          output=[]
+          for idx, scene in enumerate(scenes):
+            voice=voices[profile][scene['who']]
+            print(f"Ses uretimi {idx+1}/{len(scenes)}: {scene['who']} - {voice} - {scene['emotion']}", flush=True)
+            audio=model.generate(scene['speech'], voice=voice, emotion=scene['emotion'], seed=200+idx)
+            wav_path=f'public/scene_{idx}.wav'
+            save_wav(wav_path, audio, model.sample_rate)
+            with wave.open(wav_path,'rb') as wf:
+              duration=wf.getnframes()/wf.getframerate()
+            hold=0.95 if scene['mood'] in ('question','problem') else 0.6
+            frames=math.ceil(max(4.2, duration+hold)*30)
+            output.append({
+              'id': idx,
+              'who': scene['who'],
+              'speech': scene['speech'],
+              'title': scene['title'],
+              'caption': scene['caption'],
+              'image': scene['image'],
+              'audio': f'scene_{idx}.wav',
+              'effect': 'sfx_cheer.wav' if scene['mood']=='celebrate' else ('sfx_find.wav' if scene['mood']=='found' else None),
+              'durationInFrames': frames,
+            })
+
+          Path('src/scenes-data.json').write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding='utf-8')
+          print('Sahne sayisi:', len(output), flush=True)
+          PYEND
+
+          cat > src/index.jsx <<'JSEND'
+          import React from 'react';
+          import {
+            AbsoluteFill,
+            Audio,
+            Composition,
+            Img,
+            Sequence,
+            staticFile,
+            useCurrentFrame,
+            spring,
+            registerRoot,
+          } from 'remotion';
+          import scenes from './scenes-data.json';
+
+          const totalDuration = scenes.reduce((sum, s) => sum + s.durationInFrames, 0);
+
+          const TopPanel = ({title, index, total}) => (
+            <div style={{position:'absolute', left:34, right:34, top:32, height:96, borderRadius:24, background:'rgba(255,255,255,0.92)', boxShadow:'0 10px 20px rgba(0,0,0,0.10)', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px', color:'#2e2e58'}}>
+              <div style={{fontSize:34, fontWeight:800}}>{title}</div>
+              <div style={{fontSize:22, fontWeight:700, opacity:0.7}}>{index}/{total}</div>
+            </div>
+          );
+
+          const BottomPanel = ({caption}) => (
+            <div style={{position:'absolute', left:34, right:34, bottom:46, minHeight:160, borderRadius:30, background:'rgba(255,255,255,0.94)', boxShadow:'0 16px 26px rgba(0,0,0,0.12)', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'center', textAlign:'center', color:'#2e2e58'}}>
+              <div style={{fontSize:40, lineHeight:1.18, fontWeight:800}}>{caption}</div>
+            </div>
+          );
+
+          const Scene = ({scene, index, total}) => {
+            const frame = useCurrentFrame();
+            const zoom = 1.0 + spring({frame, fps:30, config:{damping:18, stiffness:60}}) * 0.04;
+            const panX = Math.sin(frame / 55) * 6;
+            const panY = Math.cos(frame / 62) * 8;
+            const src = staticFile(`assets/${scene.image}`);
+            return (
+              <AbsoluteFill>
+                <Img src={src} style={{width:'100%', height:'100%', objectFit:'cover', transform:`translate(${panX}px, ${panY}px) scale(${zoom})`}} />
+                <div style={{position:'absolute', inset:0, background:'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.04))'}} />
+                <TopPanel title={scene.title} index={index} total={total} />
+                <BottomPanel caption={scene.caption} />
+                <Audio src={staticFile(scene.audio)} />
+                {scene.effect ? <Audio src={staticFile(scene.effect)} volume={0.33} /> : null}
+              </AbsoluteFill>
+            );
+          };
+
+          const Video = () => {
+            let cursor = 0;
+            return (
+              <AbsoluteFill>
+                {scenes.map((scene, i) => {
+                  const from = cursor;
+                  cursor += scene.durationInFrames;
+                  return (
+                    <Sequence key={scene.id} from={from} durationInFrames={scene.durationInFrames}>
+                      <Scene scene={scene} index={i + 1} total={scenes.length} />
+                    </Sequence>
+                  );
+                })}
+              </AbsoluteFill>
+            );
+          };
+
+          const Root = () => (
+            <Composition id="MinikKasiflerV38" component={Video} durationInFrames={totalDuration} fps={30} width={720} height={1280} />
+          );
+
+          registerRoot(Root);
+          JSEND
+
+      - name: Sesleri ve sahneleri hazirla
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/tts_v38.py
+          test -s src/scenes-data.json
+          test -s public/scene_0.wav
+          test -s public/assets/scene_01.jpg
+
+      - name: MP4 olustur
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="outputs/${BOLUM}-${SES_PROFILI}-${MOD}-v38.mp4"
+          npx remotion render src/index.jsx MinikKasiflerV38 "$OUT" --codec=h264 --concurrency=2
+          test -s "$OUT"
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1 "$OUT" | grep -q h264
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of default=noprint_wrappers=1 "$OUT" | grep -q audio
+
+      - name: Artifacts yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: minik-kasifler-v38-${{ inputs.bolum }}-${{ inputs.ses_profili }}-${{ inputs.mod }}
+          path: |
+            outputs/*.mp4
+            public/*.wav
+            src/scenes-data.json
+          if-no-files-found: error
+          retention-days: 7
