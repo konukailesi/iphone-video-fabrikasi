@@ -4,8 +4,11 @@ random.seed(17)
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 s=bpy.context.scene
-s.render.engine='CYCLES'
-s.cycles.samples=8
+s.render.engine='BLENDER_WORKBENCH'
+s.display.shading.light='STUDIO'
+s.display.shading.color_type='MATERIAL'
+s.display.shading.show_shadows=True
+s.display.shading.show_cavity=True
 s.render.threads_mode='FIXED';s.render.threads=2
 s.render.resolution_x=360;s.render.resolution_y=640
 s.render.resolution_percentage=100;s.render.fps=12
