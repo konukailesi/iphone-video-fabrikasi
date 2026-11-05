@@ -37,7 +37,7 @@ bpy.ops.object.camera_add(location=(0,-6.6,2.4))
 cam=bpy.context.object
 cam.rotation_euler=(Vector((0,0,1.04))-cam.location).to_track_quat('-Z','Y').to_euler()
 cam.data.type='ORTHO';cam.data.ortho_scale=3.5;s.camera=cam
-world=bpy.data.worlds[0]
+world=bpy.data.worlds[0] if len(bpy.data.worlds) else bpy.data.worlds.new('Pastel sky')
 world.use_nodes=True
 world.node_tree.nodes['Background'].inputs['Color'].default_value=(.40,.72,1,1)
 world.node_tree.nodes['Background'].inputs['Strength'].default_value=.8
