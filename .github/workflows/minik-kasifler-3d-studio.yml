@@ -1,10 +1,6 @@
 name: Minik Kasifler 3D Studio V1
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/minik-kasifler-3d-studio.yml'
-      - '3d-studio/**'
 permissions:
   contents: read
 jobs:
