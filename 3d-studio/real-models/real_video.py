@@ -44,7 +44,9 @@ st.extrapolation='HOLD_FORWARD'
 before=set(bpy.data.objects.keys())
 bpy.ops.import_scene.gltf(filepath=rabbit_path)
 added=[o for o in bpy.data.objects if o.name not in before]
-bunny_meshes=[o for o in added if o.type=='MESH' and 'body' in o.name.lower()]
+all_new_meshes=[o for o in added if o.type=='MESH']
+print('RABBIT_NEW_OBJECTS',[(o.name,o.type,len(o.data.polygons) if o.type=='MESH' else 0) for o in added],flush=True)
+bunny_meshes=sorted(all_new_meshes,key=lambda ob: len(ob.data.polygons),reverse=True)[:1]
 bunny_arms=[o for o in added if o.type=='ARMATURE']
 assert bunny_meshes and bunny_arms,'Rabbit authentic mesh and skeleton missing'
 actions={a.name:a for a in bpy.data.actions}
