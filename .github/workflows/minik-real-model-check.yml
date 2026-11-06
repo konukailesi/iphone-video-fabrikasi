@@ -1,0 +1,35 @@
+name: Minik Kasifler - Real Model Source Check
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/minik-real-model-check.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect verified CC0 model download links
+        run: |
+          python3 - <<'PY'
+          import re,requests,html
+          links=[
+            'https://www.innerscene.com/tools/library/3d-parts/plush-rabbit-b2b43520',
+            'https://www.innerscene.com/tools/library/3d-parts/domestic-rabbit-d5cbd890',
+            'https://polyfork.dev/asset/forest-rabbit-ea2da0',
+            'https://poly.pizza/m/irZjWFARyl',
+          ]
+          for url in links:
+            print('SOURCE',url,flush=True)
+            try:
+              r=requests.get(url,timeout=15)
+              print('STATUS',r.status_code,'SIZE',len(r.content),'TYPE',r.headers.get('Content-Type'),flush=True)
+              body=html.unescape(r.text)
+              pats=[r'.{0,180}(?:\\.glb|\\.gltf|\\.zip|download|cdn|modelUrl).{0,220}']
+              found=re.findall(pats[0],body,re.I)
+              for x in found[:9]:print('MATCH',x[:260],flush=True)
+            except Exception as e:print('ERROR',str(e),flush=True)
+          PY
