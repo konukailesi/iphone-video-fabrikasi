@@ -1,0 +1,36 @@
+name: Minik Kasifler - Real Models Inspection
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/minik-real-asset-inspect.yml'
+      - '3d-studio/real-models/**'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender and graphics dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y blender ffmpeg libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb
+      - name: Download genuine 3D meshes
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/models outputs
+          curl -fLsS --retry 3 'https://www.innerscene.com/api/library/plush-rabbit-b2b43520/download' -o /tmp/models/plush.glb
+          curl -fLsS --retry 3 'https://polyfork.dev/cdn/forest-rabbit-ea2da0.glb' -o /tmp/models/forest.glb
+          file /tmp/models/*.glb
+          stat -c '%n %s bytes' /tmp/models/*.glb
+      - name: Inspect rig, geometry and animations
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a blender -b -t 2 --python 3d-studio/real-models/inspect.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: real-3d-model-inspection
+          path: outputs/model_inventory.json
+          retention-days: 5
+          if-no-files-found: error
