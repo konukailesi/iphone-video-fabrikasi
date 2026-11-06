@@ -44,12 +44,14 @@ st.extrapolation='HOLD_FORWARD'
 before=set(bpy.data.objects.keys())
 bpy.ops.import_scene.gltf(filepath=rabbit_path)
 added=[o for o in bpy.data.objects if o.name not in before]
+imported_names=[o.name for o in added]
 all_new_meshes=[o for o in added if o.type=='MESH']
 print('RABBIT_NEW_OBJECTS',[(o.name,o.type,len(o.data.polygons) if o.type=='MESH' else 0) for o in added],flush=True)
 bunny_meshes=sorted(all_new_meshes,key=lambda ob: len(ob.data.polygons),reverse=True)[:1]
 # Remove the extra importer Icosphere helper, not part of the actual rabbit.
 for ob in all_new_meshes:
     if ob not in bunny_meshes: bpy.data.objects.remove(ob,do_unlink=True)
+added=[bpy.data.objects[n] for n in imported_names if n in bpy.data.objects]
 for ob in bunny_meshes:
     for poly in ob.data.polygons: poly.use_smooth=True
 bunny_arms=[o for o in added if o.type=='ARMATURE']
