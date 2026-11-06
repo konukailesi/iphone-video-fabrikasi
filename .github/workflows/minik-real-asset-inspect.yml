@@ -16,7 +16,7 @@ jobs:
       - name: Install Blender and graphics dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y blender ffmpeg libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb
+          sudo apt-get install -y python3-numpy blender ffmpeg libegl1 libgl1 libopengl0 libgbm1 libgl1-mesa-dri xvfb
       - name: Download genuine 3D meshes
         run: |
           set -euo pipefail
