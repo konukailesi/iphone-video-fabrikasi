@@ -10,6 +10,22 @@ chick_rig=bpy.data.objects.get('AnimationRig')
 assert chick_rig is not None and chick_rig.type=='ARMATURE', 'Chicken armature missing'
 walk=bpy.data.actions.get('walk') or bpy.data.actions.get('Walk')
 assert walk is not None, 'Chicken walk animation missing'
+# Original asset contains a demo stage. Keep only the character and its rig.
+for ob in list(bpy.data.objects):
+    if ob.type=='MESH' and ob.name!='ChickenMesh':
+        bpy.data.objects.remove(ob,do_unlink=True)
+    elif ob.type in ('CAMERA','LIGHT'):
+        bpy.data.objects.remove(ob,do_unlink=True)
+# Apply warm yellow material colours for the existing chicken mesh, never replace its geometry.
+chicken_mesh=bpy.data.objects.get('ChickenMesh')
+assert chicken_mesh is not None,'Original skinned chicken mesh missing'
+for mat in chicken_mesh.data.materials:
+    if mat:
+        label=mat.name.lower()
+        if 'eye' in label or 'pupil' in label: color=(.04,.06,.14,1)
+        elif 'beak' in label or 'foot' in label or 'leg' in label:color=(1,.46,.05,1)
+        else:color=(1,.78,.12,1)
+        mat.diffuse_color=color
 # Hide rigs control handles, keep the original skinned character mesh and materials.
 for o in bpy.data.objects:
     if o.name.startswith('WGT-') or o.name=='metarig':
@@ -63,9 +79,9 @@ for ob in bunny_meshes:
 minz=min(v.z for v in allverts);maxz=max(v.z for v in allverts)
 height=maxz-minz
 assert height>0.01, 'Rabbit mesh dimension invalid'
-scale=2.1/height
+scale=9.5/height
 container.scale=(scale,scale,scale)
-container.location=(-1.04,0.2,-scale*minz+0.1)
+container.location=(-0.80,0.2,-scale*minz+0.1)
 # A small 3D material retint; does not replace the real mesh with primitives.
 for ob in bunny_meshes:
     for material in ob.data.materials:
@@ -81,12 +97,12 @@ for ob in bunny_meshes:
             for i,slot in enumerate(ob.data.materials):
                 if slot==material:ob.data.materials[i]=new
 # Position actual chick rig: source model and all its bones remain untouched.
-chick_rig.location=(1.05,0,0.05)
+chick_rig.location=(0.66,0,0.05)
 # Source mesh follows rig via armature deform.
-for frame,x in [(1,1.05),(30,1.00),(60,.96),(90,.91),(120,.87)]:
+for frame,x in [(1,.66),(30,.63),(60,.60),(90,.57),(120,.54)]:
     chick_rig.location.x=x
     chick_rig.keyframe_insert(data_path='location',frame=frame)
-for frame,x in [(1,-1.04),(30,-.99),(60,-.95),(90,-.90),(120,-.86)]:
+for frame,x in [(1,-.80),(30,-.76),(60,-.72),(90,-.69),(120,-.66)]:
     container.location.x=x
     container.keyframe_insert(data_path='location',frame=frame)
 # Scene decor (not animal body geometry).
@@ -106,7 +122,7 @@ for i in range(14):
 bpy.ops.object.camera_add(location=(0,-9.3,3.15))
 camera=bpy.context.object
 camera.rotation_euler=(Vector((0,0,1.20))-camera.location).to_track_quat('-Z','Y').to_euler()
-camera.data.type='ORTHO';camera.data.ortho_scale=5.8
+camera.data.type='ORTHO';camera.data.ortho_scale=5.2
 scene.camera=camera
 # Workbench with material color and ambient shadow for reproducible GitHub CPU render.
 scene.render.engine='BLENDER_WORKBENCH'
@@ -114,10 +130,11 @@ scene.display.shading.light='STUDIO'
 scene.display.shading.color_type='MATERIAL'
 scene.display.shading.show_shadows=True
 scene.display.shading.show_cavity=True
+scene.display.shading.studiolight_rotate_z=.2
 scene.display.shading.cavity_type='BOTH'
 scene.display.shading.background_type='WORLD'
 scene.world=bpy.data.worlds[0] if bpy.data.worlds else bpy.data.worlds.new('Morning sky')
-scene.world.color=(.66,.81,1.0)
+scene.world.color=(.70,.84,1.0)
 scene.render.resolution_x=540;scene.render.resolution_y=960
 scene.render.resolution_percentage=100
 scene.render.fps=24
