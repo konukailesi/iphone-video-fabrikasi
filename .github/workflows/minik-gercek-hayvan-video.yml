@@ -30,12 +30,14 @@ jobs:
       - name: Gercek yuruyus animasyonlarini render et
         run: |
           set -euo pipefail
-          PREVIEW_ONLY=1 LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a blender -b -t 2 --python 3d-studio/real-models/real_video.py
-          test -s outputs/preview.png
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a blender -b -t 2 --python 3d-studio/real-models/real_video.py
+          test -s /tmp/realframes/frame_0001.png
+          ffmpeg -hide_banner -loglevel error -y -framerate 24 -start_number 1 -i /tmp/realframes/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 19 -movflags +faststart outputs/Minik_Kasifler_Gercek_3D_Hayvanlar.mp4
+          test -s outputs/Minik_Kasifler_Gercek_3D_Hayvanlar.mp4
       - name: MP4 dosyasini yukle
         uses: actions/upload-artifact@v4
         with:
-          name: minik-kasifler-gercek-3d-kadraj-test
-          path: outputs/*.png
+          name: minik-kasifler-gercek-3d-video
+          path: outputs/*.mp4
           if-no-files-found: error
           retention-days: 7
