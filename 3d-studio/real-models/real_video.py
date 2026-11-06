@@ -44,7 +44,7 @@ st.extrapolation='HOLD_FORWARD'
 before=set(bpy.data.objects.keys())
 bpy.ops.import_scene.gltf(filepath=rabbit_path)
 added=[o for o in bpy.data.objects if o.name not in before]
-bunny_meshes=[o for o in added if o.type=='MESH']
+bunny_meshes=[o for o in added if o.type=='MESH' and 'body' in o.name.lower()]
 bunny_arms=[o for o in added if o.type=='ARMATURE']
 assert bunny_meshes and bunny_arms,'Rabbit authentic mesh and skeleton missing'
 actions={a.name:a for a in bpy.data.actions}
