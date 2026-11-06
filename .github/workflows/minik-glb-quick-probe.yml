@@ -29,5 +29,6 @@ jobs:
             size=struct.unpack('<I',data[12:16])[0]
             o=json.loads(data[20:20+size])
             print('GLTF',json.dumps({'nodes':len(o.get('nodes',[])),'skins':len(o.get('skins',[])),'animations':[a.get('name','unnamed') for a in o.get('animations',[])],'meshes':len(o.get('meshes',[])),'materials':[x.get('name') for x in o.get('materials',[])][:20]},ensure_ascii=False),flush=True)
+            print('GEOMETRY_DETAILS',json.dumps({'mesh_nodes':[{'name':n.get('name'),'mesh':n['mesh'],'skin':n.get('skin'),'translation':n.get('translation'),'scale':n.get('scale')} for n in o.get('nodes',[]) if 'mesh' in n], 'mesh_info':[{'name':m.get('name'),'primitives':[{'bounds':[(o.get('accessors',[])[p['attributes']['POSITION']].get('min'),o.get('accessors',[])[p['attributes']['POSITION']].get('max'))] if 'POSITION' in p['attributes'] else []} for p in m.get('primitives',[])]} for m in o.get('meshes',[])]},ensure_ascii=False),flush=True)
            except Exception as e:print('ERROR',type(e).__name__,str(e),flush=True)
           PY
