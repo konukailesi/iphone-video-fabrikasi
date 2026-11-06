@@ -48,7 +48,7 @@ bunny_meshes=[o for o in added if o.type=='MESH']
 bunny_arms=[o for o in added if o.type=='ARMATURE']
 assert bunny_meshes and bunny_arms,'Rabbit authentic mesh and skeleton missing'
 actions={a.name:a for a in bpy.data.actions}
-rabbit_action=next((a for n,a in actions.items() if 'walk' in n.lower() and a!=walk),None)
+rabbit_action=actions.get('Walk') or next((a for n,a in actions.items() if n.lower().startswith('walk') and a!=walk and any('pose.bones' in fc.data_path for fc in a.fcurves)),None)
 assert rabbit_action is not None, 'Rabbit Walk action missing'
 # Animation importer may have set a rigid-body action to the root and pose actions
 # to the armature. Use real armature animation; preserve source animation hierarchy.
@@ -70,18 +70,39 @@ for o in added:
         old=o.matrix_world.copy()
         o.parent=container
         o.matrix_world=old
-# Inspect extents at rest to determine a consistent base size.
+# Normalize the *visible mesh* bounds after all imported parent transforms.
+# Evaluate mesh with the armature modifier so hidden bind-pose offsets don't distort size.
+scene.frame_set(1)
 bpy.context.view_layer.update()
-allverts=[]
-for ob in bunny_meshes:
-    for bb in ob.bound_box:
-        allverts.append(ob.matrix_world @ Vector(bb))
-minz=min(v.z for v in allverts);maxz=max(v.z for v in allverts)
-height=maxz-minz
-assert height>0.01, 'Rabbit mesh dimension invalid'
-scale=9.5/height
+def visible_bbox(meshes):
+    dg=bpy.context.evaluated_depsgraph_get()
+    pts=[]
+    for ob in meshes:
+        ev=ob.evaluated_get(dg)
+        try:
+            m=ev.to_mesh()
+            if not m or not len(m.vertices):continue
+            step=max(1,len(m.vertices)//4000)
+            pts.extend([ev.matrix_world @ m.vertices[i].co for i in range(0,len(m.vertices),step)])
+        finally:
+            try:ev.to_mesh_clear()
+            except:pass
+    assert pts, 'No evaluated rabbit mesh geometry'
+    return [min(p.x for p in pts),max(p.x for p in pts),min(p.y for p in pts),max(p.y for p in pts),min(p.z for p in pts),max(p.z for p in pts)]
+container.scale=(1,1,1)
+container.location=(0,0,0)
+bpy.context.view_layer.update()
+raw=visible_bbox(bunny_meshes)
+height=max(.01,raw[5]-raw[4])
+scale=1.5/height
 container.scale=(scale,scale,scale)
-container.location=(-0.80,0.2,-scale*minz+0.1)
+bpy.context.view_layer.update()
+scaled=visible_bbox(bunny_meshes)
+container.location.x+=(-.75-(scaled[0]+scaled[1])/2)
+container.location.y+=(-.0-(scaled[2]+scaled[3])/2)
+container.location.z+=(.07-scaled[4])
+bpy.context.view_layer.update()
+print('RABBIT_MODEL_BOUNDS',json.dumps({'raw':raw,'scaled':scaled,'final':visible_bbox(bunny_meshes),'scale':scale}),flush=True)
 # A small 3D material retint; does not replace the real mesh with primitives.
 for ob in bunny_meshes:
     for material in ob.data.materials:
@@ -102,7 +123,7 @@ chick_rig.location=(0.66,0,0.05)
 for frame,x in [(1,.66),(30,.63),(60,.60),(90,.57),(120,.54)]:
     chick_rig.location.x=x
     chick_rig.keyframe_insert(data_path='location',frame=frame)
-for frame,x in [(1,-.80),(30,-.76),(60,-.72),(90,-.69),(120,-.66)]:
+for frame,x in [(1,container.location.x),(30,container.location.x+.04),(60,container.location.x+.07),(90,container.location.x+.10),(120,container.location.x+.13)]:
     container.location.x=x
     container.keyframe_insert(data_path='location',frame=frame)
 # Scene decor (not animal body geometry).
@@ -144,4 +165,10 @@ scene.render.threads_mode='FIXED';scene.render.threads=2
 os.makedirs('/tmp/realframes',exist_ok=True)
 scene.render.filepath='/tmp/realframes/frame_'
 print('MODEL_TEST_OK',json.dumps({'rabbit_meshes':len(bunny_meshes),'rabbit_armatures':len(bunny_arms),'rabbit_walk':rabbit_action.name,'chicken_walk':walk.name,'rabbit_scale':round(scale,3)}),flush=True)
-bpy.ops.render.render(animation=True)
+if os.getenv('PREVIEW_ONLY')=='1':
+    scene.frame_set(55)
+    scene.render.filepath='outputs/preview.png'
+    os.makedirs('outputs',exist_ok=True)
+    bpy.ops.render.render(write_still=True)
+else:
+    bpy.ops.render.render(animation=True)
