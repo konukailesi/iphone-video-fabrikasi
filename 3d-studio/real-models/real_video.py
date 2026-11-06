@@ -47,6 +47,11 @@ added=[o for o in bpy.data.objects if o.name not in before]
 all_new_meshes=[o for o in added if o.type=='MESH']
 print('RABBIT_NEW_OBJECTS',[(o.name,o.type,len(o.data.polygons) if o.type=='MESH' else 0) for o in added],flush=True)
 bunny_meshes=sorted(all_new_meshes,key=lambda ob: len(ob.data.polygons),reverse=True)[:1]
+# Remove the extra importer Icosphere helper, not part of the actual rabbit.
+for ob in all_new_meshes:
+    if ob not in bunny_meshes: bpy.data.objects.remove(ob,do_unlink=True)
+for ob in bunny_meshes:
+    for poly in ob.data.polygons: poly.use_smooth=True
 bunny_arms=[o for o in added if o.type=='ARMATURE']
 assert bunny_meshes and bunny_arms,'Rabbit authentic mesh and skeleton missing'
 actions={a.name:a for a in bpy.data.actions}
@@ -129,7 +134,7 @@ for frame,x in [(1,container.location.x),(30,container.location.x+.04),(60,conta
     container.location.x=x
     container.keyframe_insert(data_path='location',frame=frame)
 # Scene decor (not animal body geometry).
-bpy.ops.mesh.primitive_plane_add(size=200,location=(0,0,-.035))
+bpy.ops.mesh.primitive_plane_add(size=7,location=(0,0,-.035))
 ground=bpy.context.object;ground.name='Yesil bahce'
 mat=bpy.data.materials.new('Cimen yeşili');mat.diffuse_color=(.30,.73,.31,1)
 ground.data.materials.append(mat)
@@ -157,7 +162,7 @@ scene.display.shading.studiolight_rotate_z=.2
 scene.display.shading.cavity_type='BOTH'
 scene.display.shading.background_type='WORLD'
 scene.world=bpy.data.worlds[0] if bpy.data.worlds else bpy.data.worlds.new('Morning sky')
-scene.world.color=(.70,.84,1.0)
+scene.world.color=(.85,.91,1.0)
 scene.render.resolution_x=540;scene.render.resolution_y=960
 scene.render.resolution_percentage=100
 scene.render.fps=24
